@@ -1,0 +1,62 @@
+external_components:
+  - source:
+      type: git
+      url: https://github.com/r0bb10/esphome-olimpia-bridge.git
+      ref: main
+    components: [olimpia_bridge]
+
+esp32:
+  board: lolin_s2_mini #Pinout: https://www.wemos.cc/en/latest/s2/s2_mini.html
+  variant: esp32s2
+  framework:
+    type: arduino
+    version: recommended
+
+preferences:
+  flash_write_interval: 0s
+
+uart:
+  id: modbus_uart
+  tx_pin:
+    number: GPIO37 # DI
+    inverted: true
+  rx_pin:
+    number: GPIO39 # RO
+    inverted: true
+  baud_rate: 9600
+  data_bits: 7
+  stop_bits: 1
+  parity: EVEN
+
+olimpia_bridge:
+  id: modbus_ascii_bridge
+  uart_id: modbus_uart
+  re_pin: GPIO35 # RE
+  de_pin: GPIO33 # DE
+  climates:
+    - name: "Fancoil Living"
+      id: fancoil_living
+      address: 1
+      water_temperature_sensor:
+        name: "Living Water Temp Sensor"
+    - name: "Fancoil Office"
+      id: fancoil_office
+      address: 2
+      water_temperature_sensor:
+        name: "Office Water Temp Sensor"
+
+sensor:
+ - platform: homeassistant
+   id: living_room_temp
+   entity_id: sensor.temperature_living
+   on_value:
+      then:
+        - lambda: |-
+            id(fancoil_living).set_external_ambient_temperature(x);
+ - platform: homeassistant
+   id: office_room_temp
+   entity_id: sensor.temperature_office
+   on_value:
+      then:
+        - lambda: |-
+            id(fancoil_office).set_external_ambient_temperature(x);
