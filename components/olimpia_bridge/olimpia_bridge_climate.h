@@ -118,6 +118,8 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   bool on_{false};
   bool boot_cycle_done_{false};
+  bool boot_recovery_done_{false};               // True after boot state recovery completes
+  bool block_control_until_recovery_{true};      // Prevent user commands until recovery is done
   Mode mode_{Mode::UNKNOWN};
   FanSpeed fan_speed_{FanSpeed::UNKNOWN};
 

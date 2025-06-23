@@ -266,6 +266,12 @@ void OlimpiaBridgeClimate::read_water_temperature() {
 void OlimpiaBridgeClimate::control_cycle() {
   const uint32_t now = millis();
 
+  // --- Skip control cycle if boot recovery is still in progress ---
+  if (!this->boot_recovery_done_) {
+    ESP_LOGD(TAG, "[%s] Skipping control cycle: boot recovery not complete", this->get_name().c_str());
+    return;
+  }  
+
   // Update every 60s or on first boot
   if (!this->boot_cycle_done_ || (now - this->last_update_time_ > 60000)) {
     ESP_LOGD(TAG, "[%s] Starting control cycle", this->get_name().c_str());
@@ -529,6 +535,12 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
             ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from saved flash state", this->get_name().c_str());
             this->apply_last_known_state();
             this->write_control_registers_cycle();  // Push corrected state back to device
+
+            // Mark recovery as done, even in fallback case
+            this->boot_recovery_done_ = true;
+            this->block_control_until_recovery_ = false;
+            ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Enabling control.", this->get_name().c_str());
+
             return;
           }
 
@@ -546,6 +558,11 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
 
           // Ensure state is pushed to HA
           this->update_state_from_parsed(parsed);
+
+          // --- Mark recovery as completed ---
+          this->boot_recovery_done_ = true;
+          this->block_control_until_recovery_ = false;
+          ESP_LOGI(TAG, "[%s] Boot register read complete. Enabling control.", this->get_name().c_str());
         });
     });
 }
@@ -609,9 +626,13 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
     });
 }
 
-// --- Periodic Polling (Water Temp + Valve Status) ---
+// --- Periodic Polling Cycle (Valve Status + Water Temp) ---
 void OlimpiaBridgeClimate::status_poll_cycle() {
   const uint32_t now = millis();
+
+  // Skip polling until boot recovery is done
+  if (!this->boot_recovery_done_)
+    return;
 
   // Call update of climate action based on valve
   if (now - this->last_valve_status_poll_ > 30000UL) {
