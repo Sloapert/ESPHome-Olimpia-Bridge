@@ -6,6 +6,26 @@ namespace olimpia_bridge {
 
 static const char *const TAG = "Climate";
 
+// --- Helper functions for logging ---
+static const char *mode_to_string(Mode mode) {
+  switch (mode) {
+    case Mode::AUTO: return "AUTO";
+    case Mode::COOLING: return "COOL";
+    case Mode::HEATING: return "HEAT";
+    case Mode::UNKNOWN: default: return "UNKNOWN";
+  }
+}
+
+static const char *fan_speed_to_string(FanSpeed fan) {
+  switch (fan) {
+    case FanSpeed::AUTO: return "AUTO";
+    case FanSpeed::MIN: return "LOW";
+    case FanSpeed::NIGHT: return "QUIET";
+    case FanSpeed::MAX: return "HIGH";
+    case FanSpeed::UNKNOWN: default: return "UNKNOWN";
+  }
+}
+
 // --- Register 101 encoder (bit-mapped control register) ---
 uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpeed fan_speed) {
   uint16_t reg = 0;
@@ -228,7 +248,7 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
     if (memcmp(&this->last_saved_state_, &current, sizeof(SavedState)) != 0) {
       this->last_saved_state_ = current;
       if (this->saved_state_pref_.save(&current)) {
-        ESP_LOGI(TAG, "[%s] Updated user state saved to flash: mode=%d fan=%d on=%d target=%.1f°C",
+        ESP_LOGD(TAG, "[%s] Updated user state saved to flash: mode=%d fan=%d on=%d target=%.1f°C",
                  this->get_name().c_str(), static_cast<int>(this->mode_), static_cast<int>(this->fan_speed_),
                  this->on_, this->target_temperature_);
       } else {
@@ -309,9 +329,13 @@ void OlimpiaBridgeClimate::write_control_registers_cycle() {
   uint16_t reg102 = static_cast<uint16_t>(this->target_temperature_ * 10);
   uint16_t reg103 = std::isnan(this->external_ambient_temperature_) ? 0 : static_cast<uint16_t>(this->external_ambient_temperature_ * 10);
 
-  ESP_LOGI(TAG, "[%s] Writing 101: 0x%04X | 102: %.1f°C | 103: %.1f°C",
-           this->get_name().c_str(), reg101,
-           this->target_temperature_, this->external_ambient_temperature_);
+  ESP_LOGI(TAG, "[%s] Writing control → Power: %s | Mode: %s | Fan: %s | Target: %.1f°C | Ambient: %.1f°C",
+          this->get_name().c_str(),
+          this->on_ ? "ON" : "OFF",
+          mode_to_string(this->mode_),
+          fan_speed_to_string(this->fan_speed_),
+          this->target_temperature_,
+          this->external_ambient_temperature_);
 
   this->handler_->write_register(this->address_, 101, reg101, [this, reg102, reg103](bool ok1, const std::vector<uint16_t> &) {
     if (!ok1) {
@@ -386,7 +410,7 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
   this->target_temperature = this->target_temperature_;  // use internal as reference for now
 
   // --- Log state for debugging
-  ESP_LOGI(TAG, "[%s] Updated state from reg101: ON=%d MODE=%d FAN=%d → current=%.1f°C target=%.1f°C",
+  ESP_LOGD(TAG, "[%s] Updated state from reg101: ON=%d MODE=%d FAN=%d → current=%.1f°C target=%.1f°C",
            this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
            static_cast<int>(this->fan_speed_), this->current_temperature, this->target_temperature);
 
@@ -522,7 +546,7 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
       uint16_t reg101 = data101[0];
       ParsedState parsed = parse_command_register(reg101);
 
-      ESP_LOGI(TAG, "[%s] Read 101: 0x%04X → ON=%d MODE=%d FAN=%d", this->get_name().c_str(),
+      ESP_LOGD(TAG, "[%s] Read 101: 0x%04X → ON=%d MODE=%d FAN=%d", this->get_name().c_str(),
                reg101, parsed.on, parsed.mode, static_cast<int>(parsed.fan_speed));
 
       this->handler_->read_register(this->address_, 102, 1,
@@ -533,7 +557,7 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           }
 
           float target = data102[0] * 0.1f;
-          ESP_LOGI(TAG, "[%s] Read 102 → target temperature: %.1f°C", this->get_name().c_str(), target);
+          ESP_LOGD(TAG, "[%s] Read 102 → target temperature: %.1f°C", this->get_name().c_str(), target);
 
           // --- POWER-LOSS RECOVERY ---
           if (is_first_boot && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
@@ -555,7 +579,7 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           // Update internal + publish to HA
           this->update_state_from_parsed(parsed);
 
-          ESP_LOGI(TAG, "[%s] Updated state → ON=%d MODE=%d FAN=%d target=%.1f°C",
+          ESP_LOGD(TAG, "[%s] Updated state → ON=%d MODE=%d FAN=%d target=%.1f°C",
                    this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
                    static_cast<int>(this->fan_speed_), this->target_temperature_);
 
@@ -615,7 +639,7 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
 
       if (this->action != new_action) {
         this->action = new_action;
-        ESP_LOGI(TAG, "[%s] Updated action from valve status (reg 9 = 0x%04X): ev1=%d boiler=%d chiller=%d → %s",
+        ESP_LOGD(TAG, "[%s] Updated action from valve status (reg 9 = 0x%04X): ev1=%d boiler=%d chiller=%d → %s",
                  this->get_name().c_str(), reg9, ev1, boiler, chiller,
                  climate::climate_action_to_string(new_action));
         this->publish_state();
