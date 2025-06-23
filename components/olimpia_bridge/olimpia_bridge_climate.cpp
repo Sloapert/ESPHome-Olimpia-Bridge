@@ -501,68 +501,66 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
   this->publish_state();
 }
 
-// --- Boot State Recovery ---
+// --- Boot State Recovery or Manual Refresh ---
 void OlimpiaBridgeClimate::restore_or_refresh_state() {
   if (this->handler_ == nullptr) return;
 
-  ESP_LOGI(TAG, "[%s] Boot state recovery: reading 101 + 102...", this->get_name().c_str());
+  const bool is_first_boot = !this->boot_recovery_done_;
+
+  if (is_first_boot)
+    ESP_LOGI(TAG, "[%s] Boot state recovery: reading 101 + 102...", this->get_name().c_str());
+  else
+    ESP_LOGD(TAG, "[%s] Refreshing state from device...", this->get_name().c_str());
 
   this->handler_->read_register(this->address_, 101, 1,
-    [this](bool ok101, const std::vector<uint16_t> &data101) {
+    [this, is_first_boot](bool ok101, const std::vector<uint16_t> &data101) {
       if (!ok101 || data101.empty()) {
-        ESP_LOGW(TAG, "[%s] Failed to read register 101 during boot recovery", this->get_name().c_str());
+        ESP_LOGW(TAG, "[%s] Failed to read register 101", this->get_name().c_str());
         return;
       }
 
       uint16_t reg101 = data101[0];
       ParsedState parsed = parse_command_register(reg101);
 
-      ESP_LOGI(TAG, "[%s] Read 101 on boot: 0x%04X → ON=%d MODE=%d FAN=%d", this->get_name().c_str(),
-         reg101, parsed.on, parsed.mode, static_cast<int>(parsed.fan_speed));
+      ESP_LOGI(TAG, "[%s] Read 101: 0x%04X → ON=%d MODE=%d FAN=%d", this->get_name().c_str(),
+               reg101, parsed.on, parsed.mode, static_cast<int>(parsed.fan_speed));
 
       this->handler_->read_register(this->address_, 102, 1,
-        [this, parsed](bool ok102, const std::vector<uint16_t> &data102) {
+        [this, parsed, is_first_boot](bool ok102, const std::vector<uint16_t> &data102) {
           if (!ok102 || data102.empty()) {
-            ESP_LOGW(TAG, "[%s] Failed to read register 102 during boot recovery", this->get_name().c_str());
+            ESP_LOGW(TAG, "[%s] Failed to read register 102", this->get_name().c_str());
             return;
           }
 
           float target = data102[0] * 0.1f;
           ESP_LOGI(TAG, "[%s] Read 102 → target temperature: %.1f°C", this->get_name().c_str(), target);
 
-          // --- POWER-LOSS RECOVERY ---
-          if (parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
+          if (is_first_boot && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
             ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from saved flash state", this->get_name().c_str());
             this->apply_last_known_state();
-            this->write_control_registers_cycle();  // Push corrected state back to device
+            this->write_control_registers_cycle();
 
-            // Mark recovery as done, even in fallback case
             this->boot_recovery_done_ = true;
             this->block_control_until_recovery_ = false;
             ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Enabling control.", this->get_name().c_str());
-
             return;
           }
 
-          // --- Normal state update ---
-          // Update internal state from parsed register 101
-          this->update_state_from_parsed(parsed);
-
-          // Set target temperature from register 102
           this->target_temperature_ = target;
           this->target_temperature = target;
+
+          // Update internal + publish to HA
+          this->update_state_from_parsed(parsed);
 
           ESP_LOGI(TAG, "[%s] Updated state → ON=%d MODE=%d FAN=%d target=%.1f°C",
                    this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
                    static_cast<int>(this->fan_speed_), this->target_temperature_);
 
-          // Ensure state is pushed to HA
-          this->update_state_from_parsed(parsed);
-
-          // --- Mark recovery as completed ---
-          this->boot_recovery_done_ = true;
-          this->block_control_until_recovery_ = false;
-          ESP_LOGI(TAG, "[%s] Boot register read complete. Enabling control.", this->get_name().c_str());
+          if (is_first_boot) {
+            this->boot_recovery_done_ = true;
+            this->block_control_until_recovery_ = false;
+            ESP_LOGI(TAG, "[%s] Boot register read complete. Enabling control.", this->get_name().c_str());
+          }
         });
     });
 }
