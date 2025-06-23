@@ -535,17 +535,20 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           float target = data102[0] * 0.1f;
           ESP_LOGI(TAG, "[%s] Read 102 → target temperature: %.1f°C", this->get_name().c_str(), target);
 
+          // --- POWER-LOSS RECOVERY ---
           if (is_first_boot && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
             ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from saved flash state", this->get_name().c_str());
             this->apply_last_known_state();
-            this->write_control_registers_cycle();
+            this->write_control_registers_cycle();  // Push corrected state back to device
 
+            // Mark recovery as done, even in fallback case
             this->boot_recovery_done_ = true;
             this->block_control_until_recovery_ = false;
             ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Enabling control.", this->get_name().c_str());
             return;
           }
 
+          // Set target temperature from register 102
           this->target_temperature_ = target;
           this->target_temperature = target;
 
