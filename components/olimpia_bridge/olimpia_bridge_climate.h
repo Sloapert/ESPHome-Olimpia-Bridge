@@ -99,7 +99,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
  protected:
   void update_state_from_parsed(const ParsedState &parsed);
-  void write_control_registers_cycle();
+  void write_control_registers_cycle(std::function<void()> callback = nullptr);
   uint16_t get_status_register();
   uint32_t last_valve_status_poll_{0};  // Tracks last poll time of ev1
   uint32_t last_water_temp_poll_{0};  // Tracks last poll time of reg1

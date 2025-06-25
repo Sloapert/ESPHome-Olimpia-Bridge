@@ -234,7 +234,10 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
 
   // If any setting changed, apply and persist
   if (state_changed) {
-    this->write_control_registers_cycle();
+    this->write_control_registers_cycle([this]() {
+      // Immediately check for action status after user control
+      this->update_climate_action_from_valve_status();
+    });
 
     SavedState current{
       .on = this->on_,
@@ -261,9 +264,6 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
 
   // Refresh state and publish it to UI
   this->restore_or_refresh_state();
-
-  // Immediately check for action status after user control
-  this->update_climate_action_from_valve_status();
 }
 
 // --- Register 1 (water temp) ---
@@ -322,7 +322,7 @@ void OlimpiaBridgeClimate::control_cycle() {
 }
 
 // --- FSM write 101 → 102 → 103 ---
-void OlimpiaBridgeClimate::write_control_registers_cycle() {
+void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> callback) {
   if (this->handler_ == nullptr) return;
 
   uint16_t reg101 = this->get_status_register();
@@ -337,26 +337,33 @@ void OlimpiaBridgeClimate::write_control_registers_cycle() {
           this->target_temperature_,
           this->external_ambient_temperature_);
 
-  this->handler_->write_register(this->address_, 101, reg101, [this, reg102, reg103](bool ok1, const std::vector<uint16_t> &) {
+  this->handler_->write_register(this->address_, 101, reg101, [this, reg102, reg103, callback](bool ok1, const std::vector<uint16_t> &) {
     if (!ok1) {
       ESP_LOGW(TAG, "[%s] Failed to write register 101", this->get_name().c_str());
       return;
     }
 
-    this->handler_->write_register(this->address_, 102, reg102, [this, reg103](bool ok2, const std::vector<uint16_t> &) {
+    this->handler_->write_register(this->address_, 102, reg102, [this, reg103, callback](bool ok2, const std::vector<uint16_t> &) {
       if (!ok2) {
         ESP_LOGW(TAG, "[%s] Failed to write register 102", this->get_name().c_str());
         return;
       }
 
-      this->handler_->write_register(this->address_, 103, reg103, [this](bool ok3, const std::vector<uint16_t> &) {
+      this->handler_->write_register(this->address_, 103, reg103, [this, callback](bool ok3, const std::vector<uint16_t> &) {
         if (!ok3) {
           ESP_LOGW(TAG, "[%s] Failed to write register 103", this->get_name().c_str());
-          return;
-        }
-      });
+               return;
+              }
+
+              // Delay slightly before checking valve status to allow hardware to react
+              if (callback) {
+                this->set_timeout("valve_status_check", 500, [callback]() {
+                  callback();
+                });
+              }
+            });
+        });
     });
-  });
 }
 
 // --- Update from parsed state (register 101) ---
@@ -640,14 +647,16 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
       if (this->action != new_action) {
         this->action = new_action;
         ESP_LOGD(TAG, "[%s] Updated action from valve status (reg 9 = 0x%04X): ev1=%d boiler=%d chiller=%d → %s",
-                 this->get_name().c_str(), reg9, ev1, boiler, chiller,
-                 climate::climate_action_to_string(new_action));
-        this->publish_state();
+                this->get_name().c_str(), reg9, ev1, boiler, chiller,
+                climate::climate_action_to_string(new_action));
       } else {
         ESP_LOGD(TAG, "[%s] Valve status unchanged (reg 9 = 0x%04X): action=%s",
-                 this->get_name().c_str(), reg9,
-                 climate::climate_action_to_string(this->action));
+                this->get_name().c_str(), reg9,
+                climate::climate_action_to_string(this->action));
       }
+
+      // Always publish state, even if unchanged
+      this->publish_state();
     });
 }
 
