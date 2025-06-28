@@ -1,0 +1,82 @@
+204 current value 6, setpoint 26.5
+205 current value 4, setpoint 26.5
+mode cool starts cooling at 27.0 enters idling at 26.3
+mode heat starts heating 26.0 enters idling at 27.1
+
+
+204 current value 6, setpoint 26.5
+205 current value 5, setpoint 26.5
+mode cool starts cooling at 27.1 enters idling at 26.4
+mode heat starts heating 25.9 enters idling at 27.0
+
+
+204 current value 4, setpoint 26.5
+205 current value 5, setpoint 26.5
+mode cool starts cooling at 27.1 enters idling at 26.6
+mode heat starts heating 25.9 enters idling at 27.0
+
+
+204 current value 5, setpoint 26.5
+205 current value 4, setpoint 26.5
+mode cool starts cooling at 27.0 enters idling at 26.4
+mode heat starts heating 26.0 enters idling at 27.1
+
+
+204 current value 7, setpoint 26.5
+205 current value 3, setpoint 26.5
+mode cool starts cooling at 26.9 enters idling at 26.1
+mode heat starts heating 26.1 enters idling at 27.2
+
+
+204 current value 2, setpoint 26.5
+205 current value 2, setpoint 26.5
+mode cool starts cooling at 26.8 enters idling at 26.5
+mode heat starts heating 26.2 enters idling at 27.3
+
+
+204 current value 3, setpoint 26.5
+205 current value 3, setpoint 26.5
+mode cool starts cooling at 26.9 enters idling at 26.5
+mode heat starts heating 26.1 enters idling at 27.2
+
+
+204 current value 4, setpoint 26.5
+205 current value 4, setpoint 26.5
+mode cool starts cooling at 27.0 enters idling at 26.5
+mode heat starts heating 26.0 enters idling at 27.1
+
+
+204 current value 6, setpoint 26.5
+205 current value 6, setpoint 26.5
+mode cool starts cooling at 27.2 enters idling at 26.5
+mode heat starts heating 25.8 enters idling at 26.9
+
+
+204 current value 6, setpoint 26.5
+205 current value 2, setpoint 26.5
+mode cool starts cooling at 26.8 enters idling at 26.1
+mode heat starts heating 26.2 enters idling at 27.3
+
+
+204 current value 7, setpoint 26.5
+205 current value 2, setpoint 26.5
+mode cool starts cooling at 26.8 enters idling at 26.0
+mode heat starts heating 26.2 enters idling at 27.3
+
+
+204 current value 8, setpoint 26.5
+205 current value 2, setpoint 26.5
+mode cool starts cooling at 26.8 enters idling at 25.9
+mode heat starts heating 26.2 enters idling at 27.3
+
+
+204 current value 9, setpoint 26.5
+205 current value 2, setpoint 26.5
+mode cool starts cooling at 26.8 enters idling at 25.8
+mode heat starts heating 26.2 enters idling at 27.3
+
+
+204 current value 10, setpoint 26.5
+205 current value 2, setpoint 26.5
+mode cool starts cooling at 26.8 enters idling at 25.7
+mode heat starts heating 26.2 enters idling at 27.3

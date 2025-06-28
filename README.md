@@ -189,7 +189,6 @@ These registers should not be written frequently to avoid EEPROM wear. Only use 
 | 220      | Water temp alarm delay (min)                     | R/W    | Default: 5 min                                      |
 | 233      | Current operating mode                           | R      | 3=heating, 5=cooling, 0=auto, 7=fan-only?           |
 
----
 
 ## ⚠️ Notes
 
