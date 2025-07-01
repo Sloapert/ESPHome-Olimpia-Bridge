@@ -155,15 +155,18 @@ std::vector<uint8_t> ModbusAsciiHandler::build_request_frame_ascii_(const std::v
 
 // --- FSM: Request Queue ---
 void ModbusAsciiHandler::add_request(ModbusRequest request) {
+  request.retries_left = 2;  // Set default retry count
   this->request_queue_.push(std::move(request));
   ESP_LOGD(TAG, "[FSM] Request enqueued (fn=0x%02X reg=0x%04X)", request.function, request.start_register);
 }
 
 // --- FSM: Main loop ---
 void ModbusAsciiHandler::loop() {
-  // --- Optimization: Skip FSM execution when IDLE and queue is empty
-  if (this->fsm_state_ == ModbusState::IDLE && this->request_queue_.empty()) {
-    return;
+  // Only skip if FSM is truly idle and no pending processing
+  if (this->fsm_state_ == ModbusState::IDLE) {
+    if (this->request_queue_.empty()) {
+      return;
+    }
   }
 
   switch (this->fsm_state_) {
