@@ -447,13 +447,35 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
 
-  // Update RAM
+  // --- Debounce logic ---
+  static float candidate = NAN;
+  static uint32_t first_seen = 0;
+  const uint32_t debounce_time_ms = 30000;
+
+  if (std::isnan(candidate) || temp != candidate) {
+    candidate = temp;
+    first_seen = now;
+    ESP_LOGD(TAG, "[%s] Debounce started for %.2f°C", this->get_name().c_str(), temp);
+    return;
+  }
+
+  if (now - first_seen < debounce_time_ms) {
+    ESP_LOGD(TAG, "[%s] Waiting for %.2f°C to stabilize (%.1f/%.1f sec)",
+             this->get_name().c_str(), temp,
+             (now - first_seen) / 1000.0f, debounce_time_ms / 1000.0f);
+    return;
+  }
+
+  ESP_LOGI(TAG, "[%s] External ambient temp confirmed: %.2f°C after %.1f sec",
+           this->get_name().c_str(), temp, debounce_time_ms / 1000.0f);
+
+  // --- Update RAM ---
   this->external_ambient_temperature_ = temp;
   this->current_temperature = temp;
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
 
-  // Flash persistence logic
+  // --- Flash persistence logic ---
   if (first_time || this->using_fallback_external_temp_ || refresh_flash) {
     this->pref_.save(&temp);
     this->last_external_temp_flash_write_ = now;
@@ -468,6 +490,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     }
   }
 
+  // --- Publish updated climate state to Home Assistant ---
   this->publish_state();
 }
 
