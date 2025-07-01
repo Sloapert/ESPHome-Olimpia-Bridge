@@ -299,24 +299,24 @@ void OlimpiaBridgeClimate::control_cycle() {
   if (!this->boot_cycle_done_ || (now - this->last_update_time_ >= 60000)) {
     ESP_LOGD(TAG, "[%s] Starting control cycle", this->get_name().c_str());
 
-    // --- Push control values to registers 101/102 ---
+    // --- Push control values to registers 101/102/103 ---
     this->write_control_registers_cycle();
 
-    // --- Refresh current state from registers 101/102
-    //  ---
+    // --- Refresh current state from registers 101/102 ---
     this->restore_or_refresh_state();
 
     // --- Always push last known external ambient temp to register 103 ---
-    if (!std::isnan(this->external_ambient_temperature_)) {
-      uint16_t reg103 = static_cast<uint16_t>(this->external_ambient_temperature_ * 10);
-      this->handler_->write_register(this->address_, 103, reg103, [this](bool success, const std::vector<uint16_t> &) {
-        if (success) {
-          ESP_LOGD(TAG, "[%s] Refreshed register 103 with external temp: %.1f°C", this->get_name().c_str(), this->external_ambient_temperature_);
-        } else {
-          ESP_LOGW(TAG, "[%s] Failed to refresh register 103 (external temp)", this->get_name().c_str());
-        }
-      });
-    }
+
+    //if (!std::isnan(this->external_ambient_temperature_)) {
+    //  uint16_t reg103 = static_cast<uint16_t>(this->external_ambient_temperature_ * 10);
+    //  this->handler_->write_register(this->address_, 103, reg103, [this](bool success, const std::vector<uint16_t> &) {
+    //    if (success) {
+    //      ESP_LOGD(TAG, "[%s] Refreshed register 103 with external temp: %.1f°C", this->get_name().c_str(), this->external_ambient_temperature_);
+    //    } else {
+    //      ESP_LOGW(TAG, "[%s] Failed to refresh register 103 (external temp)", this->get_name().c_str());
+    //    }
+    //  });
+    //}
 
     // --- Update timestamps ---
     this->last_update_time_ = now;
