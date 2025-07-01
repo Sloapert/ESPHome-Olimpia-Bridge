@@ -155,8 +155,22 @@ std::vector<uint8_t> ModbusAsciiHandler::build_request_frame_ascii_(const std::v
 
 // --- FSM: Request Queue ---
 void ModbusAsciiHandler::add_request(ModbusRequest request) {
+  constexpr size_t MAX_QUEUE_SIZE = 20;  // Adjustable limit to avoid memory blowup
+
+  if (this->request_queue_.size() >= MAX_QUEUE_SIZE) {
+    ESP_LOGW(TAG, "[FSM] Request queue full, rejecting new request (fn=0x%02X reg=0x%04X)",
+             request.function, request.start_register);
+
+    // Optional: signal failure to caller immediately
+    if (request.callback)
+      request.callback(false, {});
+
+    return;
+  }
+
   request.retries_left = 2;  // Set default retry count
   this->request_queue_.push(std::move(request));
+
   ESP_LOGD(TAG, "[FSM] Request enqueued (fn=0x%02X reg=0x%04X)", request.function, request.start_register);
 }
 
