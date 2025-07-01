@@ -164,6 +164,10 @@ void OlimpiaBridgeClimate::setup() {
 
   // Kick off 101/102 read sequence for power-loss detection and actual device state
   this->restore_or_refresh_state();
+
+  // --- Initialize randomized per-device update schedules ---
+  this->next_control_cycle_ms_ = millis() + random(0, 60000);   // 0–60s
+  this->next_status_poll_ms_ = millis() + random(0, 30000);     // 0–30s
 }
 
 // --- Traits ---
@@ -723,6 +727,24 @@ void OlimpiaBridgeClimate::maybe_save_state() {
     ESP_LOGD(TAG, "[%s] Climate state saved to flash", this->get_name().c_str());
   } else {
     ESP_LOGW(TAG, "[%s] Failed to save climate state to flash", this->get_name().c_str());
+  }
+}
+
+void OlimpiaBridgeClimate::loop() {
+  const uint32_t now = millis();
+
+  // Staggered 60s control cycle (write 101/102/103)
+  if (this->boot_recovery_done_ && now >= this->next_control_cycle_ms_) {
+    this->next_control_cycle_ms_ = now + 60000 + random(0, 3000);  // 60s + jitter
+    this->write_control_registers_cycle([this]() {
+      this->update_climate_action_from_valve_status();  // Follow-up action check
+    });
+  }
+
+  // Staggered 30s status polling (reg 9 + reg 1)
+  if (this->boot_recovery_done_ && now >= this->next_status_poll_ms_) {
+    this->next_status_poll_ms_ = now + 30000 + random(0, 2000);  // 30s + jitter
+    this->status_poll_cycle();  // reg 9 + reg 1 reads
   }
 }
 

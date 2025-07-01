@@ -55,10 +55,10 @@ void OlimpiaBridge::setup() {
 // --- Periodic Update Cycle ---
 void OlimpiaBridge::update() {
   ESP_LOGD(TAG, "[Service] Running periodic control cycle for all climates...");
-  for (auto *climate : this->climates_) {
-    climate->control_cycle();
-    climate->status_poll_cycle();
-  }
+  //for (auto *climate : this->climates_) {
+  //  climate->control_cycle();
+  //  climate->status_poll_cycle();
+  //}
 }
 
 // --- Home Assistant Service: Read Register ---

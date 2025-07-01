@@ -79,6 +79,7 @@ inline ParsedState parse_command_register(uint16_t reg) {
 class OlimpiaBridgeClimate : public climate::Climate, public Component {
  public:
   void setup() override;
+  void loop() override;
   void control(const climate::ClimateCall &call) override;
   climate::ClimateTraits traits() override;
 
@@ -141,6 +142,10 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // System booted mark
   uint32_t system_boot_time_ms_{0};
+
+  // Randomized per-device scheduling
+  uint32_t next_control_cycle_ms_{0};
+  uint32_t next_status_poll_ms_{0};
 };
 
 }  // namespace olimpia_bridge
