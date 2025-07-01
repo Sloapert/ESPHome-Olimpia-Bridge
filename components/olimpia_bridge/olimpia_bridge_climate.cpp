@@ -63,6 +63,9 @@ uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpe
 
 // --- Setup ---
 void OlimpiaBridgeClimate::setup() {
+  // --- System boot time mark ---
+  this->system_boot_time_ms_ = millis();
+
   // --- Prepare preference entries
   this->pref_ = global_preferences->make_preference<float>(this->get_object_id_hash() ^ 0x1030U);
   this->saved_state_pref_ = global_preferences->make_preference<SavedState>(this->get_object_id_hash() ^ 0x2040U);
@@ -444,14 +447,14 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   if (std::isnan(temp)) return;
 
   const uint32_t now = millis();
-  const uint32_t BOOT_GRACE_PERIOD_MS = 2000;
   const uint32_t DEBOUNCE_TIME_MS = 30000;
+  const uint32_t BOOT_GRACE_PERIOD_MS = 2000;
 
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
-  bool during_boot = (now < BOOT_GRACE_PERIOD_MS);
+  bool during_boot = (now - this->system_boot_time_ms_ < BOOT_GRACE_PERIOD_MS);
 
-  // --- Debounce logic (per-instance, not static) ---
+  // --- Debounce logic (per-instance) ---
   if (std::isnan(this->debounce_candidate_temp_) || temp != this->debounce_candidate_temp_) {
     this->debounce_candidate_temp_ = temp;
     this->debounce_first_seen_ms_ = now;

@@ -138,6 +138,9 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   // Debounce state
   float debounce_candidate_temp_{NAN};
   uint32_t debounce_first_seen_ms_{0};
+
+  // System booted mark
+  uint32_t system_boot_time_ms_{0};
 };
 
 }  // namespace olimpia_bridge
