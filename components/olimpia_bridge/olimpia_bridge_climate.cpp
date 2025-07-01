@@ -444,53 +444,38 @@ uint16_t OlimpiaBridgeClimate::get_status_register() {
 void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   if (std::isnan(temp)) return;
 
-  // Round to 1 decimal digit to avoid float jitter
-  temp = roundf(temp * 10.0f) / 10.0f;
-
   const uint32_t now = millis();
-  const uint32_t DEBOUNCE_TIME_MS = 150000;
-  const uint32_t BOOT_GRACE_PERIOD_MS = 2000;
-
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
-  bool during_boot = (now - this->system_boot_time_ms_ < BOOT_GRACE_PERIOD_MS);
 
-  // --- Debounce logic (per-instance) using 1 decimal resolution ---
-  auto round1 = [](float value) { return roundf(value * 10.0f) / 10.0f; };
-
-  float rounded_new = round1(temp);
-  float rounded_old = round1(this->debounce_candidate_temp_);
-
-  // --- Determine source and log ---
-  const float rounded_temp = roundf(temp * 10.0f) / 10.0f;
-
+  // Determine source and log
   if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
     ESP_LOGI(TAG, "[%s] No ambient received yet. Falling back to FLASH value: %.1f°C",
-            this->get_name().c_str(), rounded_temp);
+        this->get_name().c_str(), temp);
 
   } else if (this->external_temp_received_from_ha_) {
     ESP_LOGI(TAG, "[%s] New ambient from HA received! Using it: %.1f°C",
-            this->get_name().c_str(), rounded_temp);
+        this->get_name().c_str(), temp);
 
   } else {
     ESP_LOGI(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C",
-            this->get_name().c_str(), rounded_temp);
+        this->get_name().c_str(), temp);
   }
 
-  // --- Update RAM ---
-  this->external_ambient_temperature_ = rounded_new;
-  this->current_temperature = rounded_new;
+  // Update RAM
+  this->external_ambient_temperature_ = temp;
+  this->current_temperature = temp;
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
 
-  // --- Flash persistence logic ---
-  if (!during_boot && (first_time || this->using_fallback_external_temp_ || refresh_flash)) {
-    this->pref_.save(&rounded_new);
+  // Flash persistence logic
+  if (first_time || this->using_fallback_external_temp_ || refresh_flash) {
+    this->pref_.save(&temp);
     this->last_external_temp_flash_write_ = now;
     this->using_fallback_external_temp_ = false;
   }
-
-  // --- Publish updated climate state to Home Assistant ---
+  
+  // Publish updated climate state to Home Assistant
   this->publish_state();
 }
 
