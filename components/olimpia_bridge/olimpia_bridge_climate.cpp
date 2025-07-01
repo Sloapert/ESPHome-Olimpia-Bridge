@@ -444,8 +444,10 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   if (std::isnan(temp)) return;
 
   const uint32_t now = millis();
+  const uint32_t BOOT_GRACE_PERIOD_MS = 2000;
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
+  bool during_boot = (now < BOOT_GRACE_PERIOD_MS);
 
   // --- Debounce logic ---
   static float candidate = NAN;
@@ -476,7 +478,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   this->external_temp_received_from_ha_ = true;
 
   // --- Flash persistence logic ---
-  if (first_time || this->using_fallback_external_temp_ || refresh_flash) {
+  if (!during_boot && (first_time || this->using_fallback_external_temp_ || refresh_flash)) {
     this->pref_.save(&temp);
     this->last_external_temp_flash_write_ = now;
 
@@ -488,6 +490,8 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     } else {
       ESP_LOGD(TAG, "[%s] Refreshed external temp in flash after 24h", this->get_name().c_str());
     }
+  } else if (during_boot) {
+    ESP_LOGD(TAG, "[%s] Skipping flash write during boot grace period", this->get_name().c_str());
   }
 
   // --- Publish updated climate state to Home Assistant ---
