@@ -445,31 +445,29 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
 
   const uint32_t now = millis();
   const uint32_t BOOT_GRACE_PERIOD_MS = 2000;
+  const uint32_t DEBOUNCE_TIME_MS = 30000;
+
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
   bool during_boot = (now < BOOT_GRACE_PERIOD_MS);
 
-  // --- Debounce logic ---
-  static float candidate = NAN;
-  static uint32_t first_seen = 0;
-  const uint32_t debounce_time_ms = 30000;
-
-  if (std::isnan(candidate) || temp != candidate) {
-    candidate = temp;
-    first_seen = now;
+  // --- Debounce logic (per-instance, not static) ---
+  if (std::isnan(this->debounce_candidate_temp_) || temp != this->debounce_candidate_temp_) {
+    this->debounce_candidate_temp_ = temp;
+    this->debounce_first_seen_ms_ = now;
     ESP_LOGD(TAG, "[%s] Debounce started for %.2f°C", this->get_name().c_str(), temp);
     return;
   }
 
-  if (now - first_seen < debounce_time_ms) {
+  if (now - this->debounce_first_seen_ms_ < DEBOUNCE_TIME_MS) {
     ESP_LOGD(TAG, "[%s] Waiting for %.2f°C to stabilize (%.1f/%.1f sec)",
              this->get_name().c_str(), temp,
-             (now - first_seen) / 1000.0f, debounce_time_ms / 1000.0f);
+             (now - this->debounce_first_seen_ms_) / 1000.0f, DEBOUNCE_TIME_MS / 1000.0f);
     return;
   }
 
   ESP_LOGI(TAG, "[%s] External ambient temp confirmed: %.2f°C after %.1f sec",
-           this->get_name().c_str(), temp, debounce_time_ms / 1000.0f);
+           this->get_name().c_str(), temp, DEBOUNCE_TIME_MS / 1000.0f);
 
   // --- Update RAM ---
   this->external_ambient_temperature_ = temp;

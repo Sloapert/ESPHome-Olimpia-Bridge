@@ -134,6 +134,10 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   bool external_temp_received_from_ha_{false};
   bool reg103_read_from_device_{false};
   uint32_t last_external_temp_flash_write_{0};
+
+  // Debounce state
+  float debounce_candidate_temp_{NAN};
+  uint32_t debounce_first_seen_ms_{0};
 };
 
 }  // namespace olimpia_bridge
