@@ -293,7 +293,7 @@ void OlimpiaBridgeClimate::control_cycle() {
   }  
 
   // Update every 60s or on first boot
-  if (!this->boot_cycle_done_ || (now - this->last_update_time_ > 60000)) {
+  if (!this->boot_cycle_done_ || (now - this->last_update_time_ >= 60000)) {
     ESP_LOGD(TAG, "[%s] Starting control cycle", this->get_name().c_str());
 
     // --- Push control values to registers 101/102 ---
