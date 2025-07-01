@@ -442,61 +442,52 @@ uint16_t OlimpiaBridgeClimate::get_status_register() {
 
 // --- External ambient temperature input (used for register 103) ---
 void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
-  ESP_LOGD(TAG, "[%s] set_external_ambient_temperature() called: %.2f°C | fallback=%s | received=%s",
-           this->get_name().c_str(),
-           temp,
-           this->using_fallback_external_temp_ ? "true" : "false",
-           this->has_received_external_temp_ ? "true" : "false");
-
   if (std::isnan(temp)) return;
 
+  // Round to 1 decimal digit to avoid float jitter
+  temp = roundf(temp * 10.0f) / 10.0f;
+
   const uint32_t now = millis();
-  const uint32_t DEBOUNCE_TIME_MS = 30000;
+  const uint32_t DEBOUNCE_TIME_MS = 150000;
   const uint32_t BOOT_GRACE_PERIOD_MS = 2000;
 
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
   bool during_boot = (now - this->system_boot_time_ms_ < BOOT_GRACE_PERIOD_MS);
 
-  // --- Debounce logic (per-instance) ---
-  if (std::isnan(this->debounce_candidate_temp_) || temp != this->debounce_candidate_temp_) {
-    this->debounce_candidate_temp_ = temp;
-    this->debounce_first_seen_ms_ = now;
-    ESP_LOGD(TAG, "[%s] Debounce started for %.2f°C", this->get_name().c_str(), temp);
-    return;
-  }
+  // --- Debounce logic (per-instance) using 1 decimal resolution ---
+  auto round1 = [](float value) { return roundf(value * 10.0f) / 10.0f; };
 
-  if (now - this->debounce_first_seen_ms_ < DEBOUNCE_TIME_MS) {
-    ESP_LOGD(TAG, "[%s] Waiting for %.2f°C to stabilize (%.1f/%.1f sec)",
-             this->get_name().c_str(), temp,
-             (now - this->debounce_first_seen_ms_) / 1000.0f, DEBOUNCE_TIME_MS / 1000.0f);
-    return;
-  }
+  float rounded_new = round1(temp);
+  float rounded_old = round1(this->debounce_candidate_temp_);
 
-  ESP_LOGI(TAG, "[%s] External ambient temp confirmed: %.2f°C after %.1f sec",
-           this->get_name().c_str(), temp, DEBOUNCE_TIME_MS / 1000.0f);
+  // --- Determine source and log ---
+  const float rounded_temp = roundf(temp * 10.0f) / 10.0f;
+
+  if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
+    ESP_LOGI(TAG, "[%s] No ambient received yet. Falling back to FLASH value: %.1f°C",
+            this->get_name().c_str(), rounded_temp);
+
+  } else if (this->external_temp_received_from_ha_) {
+    ESP_LOGI(TAG, "[%s] New ambient from HA received! Using it: %.1f°C",
+            this->get_name().c_str(), rounded_temp);
+
+  } else {
+    ESP_LOGI(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C",
+            this->get_name().c_str(), rounded_temp);
+  }
 
   // --- Update RAM ---
-  this->external_ambient_temperature_ = temp;
-  this->current_temperature = temp;
+  this->external_ambient_temperature_ = rounded_new;
+  this->current_temperature = rounded_new;
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
 
   // --- Flash persistence logic ---
   if (!during_boot && (first_time || this->using_fallback_external_temp_ || refresh_flash)) {
-    this->pref_.save(&temp);
+    this->pref_.save(&rounded_new);
     this->last_external_temp_flash_write_ = now;
-
-    if (first_time)
-      ESP_LOGI(TAG, "[%s] Stored first valid external temp to flash (initial persistence)", this->get_name().c_str());
-    else if (this->using_fallback_external_temp_) {
-      this->using_fallback_external_temp_ = false;
-      ESP_LOGI(TAG, "[%s] Stored fresh external temp to flash (replacing fallback)", this->get_name().c_str());
-    } else {
-      ESP_LOGD(TAG, "[%s] Refreshed external temp in flash after 24h", this->get_name().c_str());
-    }
-  } else if (during_boot) {
-    ESP_LOGD(TAG, "[%s] Skipping flash write during boot grace period", this->get_name().c_str());
+    this->using_fallback_external_temp_ = false;
   }
 
   // --- Publish updated climate state to Home Assistant ---
