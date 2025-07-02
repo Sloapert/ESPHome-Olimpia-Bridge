@@ -75,6 +75,7 @@ void OlimpiaBridgeClimate::setup() {
   bool has_fallback = this->pref_.load(&fallback);
   if (has_fallback) {
     this->external_ambient_temperature_ = fallback;
+    this->smoothed_ambient_ = fallback;
     this->using_fallback_external_temp_ = true;
     ESP_LOGD(TAG, "[%s] Climate setup → fallback_used=true temp=%.2f°C", this->get_name().c_str(), fallback);
   } else {
@@ -444,29 +445,41 @@ uint16_t OlimpiaBridgeClimate::get_status_register() {
 void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   if (std::isnan(temp)) return;
 
+  // --- EMA smoothing ---
+  const bool first_ema = std::isnan(this->smoothed_ambient_);
+  if (first_ema) {
+    this->smoothed_ambient_ = temp;
+  } else {
+    this->smoothed_ambient_ = this->ambient_ema_alpha_ * temp +
+                              (1.0f - this->ambient_ema_alpha_) * this->smoothed_ambient_;
+  }
+  float smoothed = this->smoothed_ambient_;
+
+  ESP_LOGI(TAG, "[%s] EMA raw=%.2f°C → smoothed=%.2f°C", this->get_name().c_str(), temp, smoothed);
+
   const uint32_t now = millis();
   bool first_time = !this->has_received_external_temp_;
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 3600000UL);
-  bool temp_changed = std::abs(temp - this->external_ambient_temperature_) > 0.05f;
+  bool temp_changed = std::abs(smoothed - this->external_ambient_temperature_) > 0.05f;
 
   // Determine source and log
   if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
     ESP_LOGI(TAG, "[%s] No ambient received yet. Falling back to FLASH value: %.1f°C", this->get_name().c_str(), temp);
-  } else if (this->external_temp_received_from_ha_) {
-    ESP_LOGI(TAG, "[%s] New ambient from HA received! Using it: %.1f°C", this->get_name().c_str(), temp);
-  } else {
-    ESP_LOGI(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C", this->get_name().c_str(), temp);
+  } else if ((first_time || this->using_fallback_external_temp_ || refresh_flash) && temp_changed && this->external_temp_received_from_ha_) {
+    ESP_LOGI(TAG, "[%s] New ambient from HA received and confirmed by EMA! Using it: %.1f°C", this->get_name().c_str(), smoothed);
+  } else if (!this->external_temp_received_from_ha_) {
+    ESP_LOGW(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C", this->get_name().c_str(), this->external_ambient_temperature_);
   }
 
   // Update RAM
-  this->external_ambient_temperature_ = temp;
-  this->current_temperature = temp;
+  this->external_ambient_temperature_ = smoothed;
+  this->current_temperature = smoothed;
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
 
   // Flash persistence logic
   if ((first_time || this->using_fallback_external_temp_ || refresh_flash) && temp_changed) {
-    this->pref_.save(&temp);
+    this->pref_.save(&smoothed);
     this->last_external_temp_flash_write_ = now;
     this->using_fallback_external_temp_ = false;
   }

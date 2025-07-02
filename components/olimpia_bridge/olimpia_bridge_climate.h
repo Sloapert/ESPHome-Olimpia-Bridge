@@ -117,6 +117,10 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   float current_temperature_{NAN};
   float external_ambient_temperature_{NAN};
 
+  // EMA smoothing for ambient temperature
+  float smoothed_ambient_{NAN};            // Smoothed version of ambient temp
+  const float ambient_ema_alpha_ = 0.2f;   // EMA smoothing factor (0.0 - 1.0)
+
   bool on_{false};
   bool boot_cycle_done_{false};
   bool boot_recovery_done_{false};               // True after boot state recovery completes
