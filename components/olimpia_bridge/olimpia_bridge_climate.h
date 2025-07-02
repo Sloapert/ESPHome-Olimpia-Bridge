@@ -87,6 +87,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_handler(ModbusAsciiHandler *handler) { this->handler_ = handler; }
   void set_water_temp_sensor(sensor::Sensor *sensor) { this->water_temp_sensor_ = sensor; }
   void set_external_ambient_temperature(float temp);
+  void set_ema_alpha(float alpha) { this->ambient_ema_alpha_ = alpha; }
 
   void status_poll_cycle();  // Periodically polls register 9
   void update_climate_action_from_valve_status();
@@ -119,7 +120,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // EMA smoothing for ambient temperature
   float smoothed_ambient_{NAN};            // Smoothed version of ambient temp
-  const float ambient_ema_alpha_ = 0.2f;   // EMA smoothing factor (0.0 - 1.0)
+  float ambient_ema_alpha_ = 0.2f;         // EMA smoothing factor (0.0 - 1.0)
 
   bool on_{false};
   bool boot_cycle_done_{false};

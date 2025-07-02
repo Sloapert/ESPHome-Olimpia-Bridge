@@ -453,7 +453,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     this->smoothed_ambient_ = this->ambient_ema_alpha_ * temp +
                               (1.0f - this->ambient_ema_alpha_) * this->smoothed_ambient_;
   }
-  float smoothed = this->smoothed_ambient_;
+  float smoothed = this->ambient_ema_alpha_ * temp + (1.0f - this->ambient_ema_alpha_) * this->smoothed_ambient_;
 
   ESP_LOGI(TAG, "[%s] EMA raw=%.2f°C → smoothed=%.2f°C", this->get_name().c_str(), temp, smoothed);
 

@@ -13,6 +13,7 @@ DEPENDENCIES = ["uart"]
 CONF_HANDLER_ID = "handler"
 CONF_CLIMATES = "climates"
 CONF_WATER_TEMPERATURE_SENSOR = "water_temperature_sensor"
+CONF_EMA_ALPHA = "ema_alpha"
 
 # --- Define C++ classes ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
@@ -24,6 +25,7 @@ ModbusAsciiHandler = olimpia_bridge_ns.class_("ModbusAsciiHandler")
 olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).extend({
     cv.Required(CONF_NAME): cv.string,
     cv.Required(CONF_ADDRESS): cv.int_range(min=1, max=247),
+    cv.Optional(CONF_EMA_ALPHA, default=0.2): cv.float_,
     cv.Optional(CONF_WATER_TEMPERATURE_SENSOR): sensor.sensor_schema(
         unit_of_measurement="°C",
         accuracy_decimals=1,
@@ -71,6 +73,7 @@ async def to_code(config):
         cg.add(climate_var.set_address(climate_conf[CONF_ADDRESS]))
         cg.add(climate_var.set_handler(handler))
         cg.add(controller.add_climate(climate_var))
+        cg.add(climate_var.set_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
 
         if CONF_WATER_TEMPERATURE_SENSOR in climate_conf:
             sens = await sensor.new_sensor(climate_conf[CONF_WATER_TEMPERATURE_SENSOR])
