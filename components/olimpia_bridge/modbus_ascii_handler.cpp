@@ -116,7 +116,7 @@ bool ModbusAsciiHandler::decode_ascii_frame(const std::string &frame, std::vecto
 
 // --- Public Modbus API (async) ---
 void ModbusAsciiHandler::read_register(uint8_t address, uint16_t reg, uint16_t count,
-                                       std::function<void(bool success, std::vector<uint16_t>)> callback) {
+  std::function<void(bool success, std::vector<uint16_t>)> callback) {
   ModbusRequest req;
   req.address = address;
   req.function = 0x03;  // Read Holding Registers
@@ -129,7 +129,7 @@ void ModbusAsciiHandler::read_register(uint8_t address, uint16_t reg, uint16_t c
 }
 
 void ModbusAsciiHandler::write_register(uint8_t address, uint16_t reg, uint16_t value,
-                                        std::function<void(bool success, std::vector<uint16_t>)> callback) {
+  std::function<void(bool success, std::vector<uint16_t>)> callback) {
   ModbusRequest req;
   req.address = address;
   req.function = 0x06;  // Write Single Register

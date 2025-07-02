@@ -4,7 +4,7 @@
 namespace esphome {
 namespace olimpia_bridge {
 
-static const char *const TAG = "Climate";
+static const char *const TAG = "climate";
 
 // --- Helper functions for logging ---
 static const char *mode_to_string(Mode mode) {

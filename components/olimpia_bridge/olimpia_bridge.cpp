@@ -7,7 +7,7 @@
 namespace esphome {
 namespace olimpia_bridge {
 
-static const char *const TAG = "Orchestrator";
+static const char *const TAG = "orchestrator";
 
 void OlimpiaBridge::setup() {
   ESP_LOGI(TAG, "Setting up Olimpia Bridge");
