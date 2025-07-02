@@ -446,20 +446,16 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
 
   const uint32_t now = millis();
   bool first_time = !this->has_received_external_temp_;
-  bool refresh_flash = (now - this->last_external_temp_flash_write_ > 86400000UL);
+  bool refresh_flash = (now - this->last_external_temp_flash_write_ > 3600000UL);
+  bool temp_changed = std::abs(temp - this->external_ambient_temperature_) > 0.05f;
 
   // Determine source and log
   if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
-    ESP_LOGI(TAG, "[%s] No ambient received yet. Falling back to FLASH value: %.1f°C",
-        this->get_name().c_str(), temp);
-
+    ESP_LOGI(TAG, "[%s] No ambient received yet. Falling back to FLASH value: %.1f°C", this->get_name().c_str(), temp);
   } else if (this->external_temp_received_from_ha_) {
-    ESP_LOGI(TAG, "[%s] New ambient from HA received! Using it: %.1f°C",
-        this->get_name().c_str(), temp);
-
+    ESP_LOGI(TAG, "[%s] New ambient from HA received! Using it: %.1f°C", this->get_name().c_str(), temp);
   } else {
-    ESP_LOGI(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C",
-        this->get_name().c_str(), temp);
+    ESP_LOGI(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C", this->get_name().c_str(), temp);
   }
 
   // Update RAM
@@ -469,7 +465,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   this->external_temp_received_from_ha_ = true;
 
   // Flash persistence logic
-  if (first_time || this->using_fallback_external_temp_ || refresh_flash) {
+  if ((first_time || this->using_fallback_external_temp_ || refresh_flash) && temp_changed) {
     this->pref_.save(&temp);
     this->last_external_temp_flash_write_ = now;
     this->using_fallback_external_temp_ = false;
