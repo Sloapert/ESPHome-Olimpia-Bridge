@@ -437,29 +437,71 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 3600000UL);
   bool temp_changed = std::abs(temp - this->external_ambient_temperature_) > 0.05f;
 
-  // Determine source and log
+  // Note: first_ha_ambient_received_ must stay false after fallback,
+  // so first HA value is bypassed (and logs accordingly), but then enables EMA.
+
   if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
-    ESP_LOGI(TAG, "[%s] No ambient received yet. Falling back to FLASH value: %.1f°C", this->get_name().c_str(), temp);
-  } else if (this->external_temp_received_from_ha_) {
-    ESP_LOGI(TAG, "[%s] New ambient from HA received! Using it: %.1f°C", this->get_name().c_str(), temp);
+    ESP_LOGI(TAG, "[%s] Restoring last known ambient from FLASH: %.1f°C", this->get_name().c_str(), temp);
+    this->first_ha_ambient_received_ = false;  // Ensure bypass still happens on next HA update
+    this->smoothed_ambient_ = NAN;             // Defensive reset for EMA after reboots
+  } else if (!this->first_ha_ambient_received_) {
+    ESP_LOGI(TAG, "[%s] Fresh ambient received from HA: %.1f°C, enabling EMA!", this->get_name().c_str(), temp);
+    this->first_ha_ambient_received_ = true;
+    this->smoothed_ambient_ = NAN;  // Reset EMA
   } else {
-    ESP_LOGI(TAG, "[%s] No HA update. Using last valid RAM ambient: %.1f°C", this->get_name().c_str(), temp);
+
+    // EMA with trend-based early confirmation logic
+    float prev = this->smoothed_ambient_;
+    float ema;
+
+    if (std::isnan(prev)) {
+      ema = temp;
+    } else {
+      ema = this->ambient_ema_alpha_ * temp + (1.0f - this->ambient_ema_alpha_) * prev;
+    }
+
+    float rounded = std::round(ema * 10.0f) / 10.0f;
+    float trend = ema - prev;
+
+    this->smoothed_ambient_ = ema;
+
+    if (rounded != this->external_ambient_temperature_) {
+      bool should_confirm = false;
+
+      if (rounded > this->external_ambient_temperature_) {
+        should_confirm = trend > 0 && ema >= (rounded - 0.03f);
+      } else if (rounded < this->external_ambient_temperature_) {
+        should_confirm = trend < 0 && ema <= (rounded + 0.03f);
+      }
+
+      if (!should_confirm) {
+        const char *trend_str = (trend > 0) ? "rising" : (trend < 0) ? "falling" : "steady";
+        ESP_LOGI(TAG, "[%s] EMA filtering active, temperature is %s! Received: %.1f°C Calculated: %.2f°C",
+                 this->get_name().c_str(), trend_str, temp, ema);
+        return;
+      }
+
+      temp = rounded;
+      ESP_LOGI(TAG, "[%s] EMA confirmed new ambient: %.1f°C (trend %s, EMA=%.2f°C)",
+               this->get_name().c_str(), temp,
+               (trend > 0) ? "↑" : (trend < 0) ? "↓" : "→", ema);
+    } else {
+      ESP_LOGI(TAG, "[%s] EMA confirmed ambient remains stable: %.1f°C", this->get_name().c_str(), temp);
+    }
   }
 
-  // Update RAM
+  // Update memory state
   this->external_ambient_temperature_ = temp;
   this->current_temperature = temp;
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
 
-  // Flash persistence logic
   if ((first_time || this->using_fallback_external_temp_ || refresh_flash) && temp_changed) {
     this->pref_.save(&temp);
     this->last_external_temp_flash_write_ = now;
     this->using_fallback_external_temp_ = false;
   }
-  
-  // Publish updated climate state to Home Assistant
+
   this->publish_state();
 }
 

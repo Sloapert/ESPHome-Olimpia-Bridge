@@ -119,8 +119,8 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   float external_ambient_temperature_{NAN};
 
   // EMA smoothing for ambient temperature
-  float smoothed_ambient_{NAN};           // Smoothed version of ambient temp
-  float ambient_ema_alpha_{0.2f};         // EMA smoothing factor (0.0 - 1.0)
+  float smoothed_ambient_{NAN};             // Smoothed version of ambient temp
+  float ambient_ema_alpha_{0.2f};           // EMA smoothing factor (0.0 - 1.0)
   bool first_ha_ambient_received_{false};   // Tracks if first raw HA ambient temp was received and accepted immediately
 
   bool on_{false};
