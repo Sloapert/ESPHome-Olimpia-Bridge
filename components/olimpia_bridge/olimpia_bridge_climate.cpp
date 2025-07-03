@@ -437,6 +437,8 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > 3600000UL);
   bool temp_changed = std::abs(temp - this->external_ambient_temperature_) > 0.05f;
 
+  constexpr uint32_t EMA_INACTIVITY_RESET_MS = 15 * 60 * 1000UL;  // 15 minutes
+
   // Note: first_ha_ambient_received_ must stay false after fallback,
   // so first HA value is bypassed (and logs accordingly), but then enables EMA.
 
@@ -449,6 +451,18 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     this->first_ha_ambient_received_ = true;
     this->smoothed_ambient_ = NAN;  // Reset EMA
   } else {
+    // Optional smart EMA reset if inactive too long
+    if (now - this->last_external_temp_update_ > EMA_INACTIVITY_RESET_MS) {
+      ESP_LOGI(TAG, "[%s] EMA reset due to inactivity. Accepting new ambient: %.1f°C", this->get_name().c_str(), temp);
+      this->external_ambient_temperature_ = temp;
+      this->current_temperature = temp;
+      this->smoothed_ambient_ = temp;
+      this->has_received_external_temp_ = true;
+      this->external_temp_received_from_ha_ = true;
+      this->last_external_temp_update_ = now;
+      this->publish_state();
+      return;
+    }
 
     // EMA with trend-based early confirmation logic
     float prev = this->smoothed_ambient_;
@@ -495,6 +509,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   this->current_temperature = temp;
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
+  this->last_external_temp_update_ = now;
 
   if ((first_time || this->using_fallback_external_temp_ || refresh_flash) && temp_changed) {
     this->pref_.save(&temp);

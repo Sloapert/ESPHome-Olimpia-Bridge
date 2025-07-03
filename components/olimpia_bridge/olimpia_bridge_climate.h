@@ -122,6 +122,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   float smoothed_ambient_{NAN};             // Smoothed version of ambient temp
   float ambient_ema_alpha_{0.2f};           // EMA smoothing factor (0.0 - 1.0)
   bool first_ha_ambient_received_{false};   // Tracks if first raw HA ambient temp was received and accepted immediately
+  uint32_t last_external_temp_update_{0};   // Tracks last update for inactivity reset
 
   bool on_{false};
   bool boot_cycle_done_{false};
