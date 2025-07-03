@@ -483,9 +483,9 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
       bool should_confirm = false;
 
       if (rounded > this->external_ambient_temperature_) {
-        should_confirm = trend > 0 && ema >= (rounded - 0.03f);
+        should_confirm = trend > 0 && ema >= (rounded - 0.02f);
       } else if (rounded < this->external_ambient_temperature_) {
-        should_confirm = trend < 0 && ema <= (rounded + 0.03f);
+        should_confirm = trend < 0 && ema <= (rounded + 0.02f);
       }
 
       if (!should_confirm) {
@@ -587,6 +587,13 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
 
   const bool is_first_boot = !this->boot_recovery_done_;
 
+  // Guard only during first boot to avoid duplicate concurrent recoveries
+  if (is_first_boot && this->boot_recovery_in_progress_)
+    return;
+
+  if (is_first_boot)
+    this->boot_recovery_in_progress_ = true;
+
   if (is_first_boot)
     ESP_LOGI(TAG, "[%s] Boot state recovery: reading 101 + 102...", this->get_name().c_str());
   else
@@ -596,6 +603,8 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
     [this, is_first_boot](bool ok101, const std::vector<uint16_t> &data101) {
       if (!ok101 || data101.empty()) {
         ESP_LOGW(TAG, "[%s] Failed to read register 101", this->get_name().c_str());
+        if (is_first_boot)
+          this->boot_recovery_in_progress_ = false;
         return;
       }
 
@@ -609,6 +618,8 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
         [this, parsed, is_first_boot](bool ok102, const std::vector<uint16_t> &data102) {
           if (!ok102 || data102.empty()) {
             ESP_LOGW(TAG, "[%s] Failed to read register 102", this->get_name().c_str());
+            if (is_first_boot)
+              this->boot_recovery_in_progress_ = false;
             return;
           }
 
@@ -624,6 +635,7 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
             // Mark recovery as done, even in fallback case
             this->boot_recovery_done_ = true;
             this->block_control_until_recovery_ = false;
+            this->boot_recovery_in_progress_ = false;
             ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Enabling control.", this->get_name().c_str());
             return;
           }
@@ -642,6 +654,7 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           if (is_first_boot) {
             this->boot_recovery_done_ = true;
             this->block_control_until_recovery_ = false;
+            this->boot_recovery_in_progress_ = false;
             ESP_LOGI(TAG, "[%s] Boot register read complete. Enabling control.", this->get_name().c_str());
           }
         });
