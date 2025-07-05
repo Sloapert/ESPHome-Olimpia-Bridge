@@ -1,4 +1,3 @@
-// --- OLIMPIA BRIDGE CLIMATE COMPONENT ---
 #include "olimpia_bridge_climate.h"
 #include "esphome/core/log.h"
 

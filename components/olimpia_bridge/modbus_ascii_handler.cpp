@@ -1,4 +1,3 @@
-// --- MODBUS ASCII HANDLER IMPLEMENTATION ---
 #include "modbus_ascii_handler.h"
 #include "esphome/core/log.h"
 

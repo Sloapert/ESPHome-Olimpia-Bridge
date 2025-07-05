@@ -1,4 +1,3 @@
-// --- MODBUS ASCII HANDLER HEADER ---
 #pragma once
 
 #include <queue>
