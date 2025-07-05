@@ -1,3 +1,5 @@
+#include <vector>
+#include <utility>
 #include "esphome.h"
 #include "olimpia_bridge.h"
 #include "olimpia_bridge_climate.h"
@@ -38,6 +40,7 @@ void OlimpiaBridge::setup() {
   // Register custom Home Assistant services
   this->register_service(&OlimpiaBridge::read_register, "read_register", {"address", "register"});
   this->register_service(&OlimpiaBridge::write_register, "write_register", {"address", "register", "value"});
+  this->register_service(&OlimpiaBridge::dump_configuration, "dump_config", {"address"});
 
   ESP_LOGI(TAG, "OlimpiaBridge setup complete");
 
@@ -108,6 +111,60 @@ void OlimpiaBridge::write_register(int address, int reg, int value) {
       // Optional: confirm state, refresh read, etc.
     }
   );
+}
+
+// --- Home Assistant Service: Dump Configuration ---
+void OlimpiaBridge::dump_configuration(int address) {
+  uint8_t addr = static_cast<uint8_t>(address);  // Safely cast to uint8_t
+
+  static uint16_t current_register = 0;
+  static std::vector<std::pair<uint16_t, uint16_t>> results;  // (reg, value)
+
+  if (current_register == 0) {
+    results.clear();
+    ESP_LOGI(TAG, "Started config dump for address %u in background, wait..", addr);
+  }
+
+  if (current_register > 255) {
+    // All done — split log into chunks to avoid truncation
+    constexpr size_t chunk_size = 30;
+    size_t total = results.size();
+    for (size_t i = 0; i < total; i += chunk_size) {
+      std::string line;
+      char header[32];
+      snprintf(header, sizeof(header), "[0x%02X] DUMP:", addr);
+      line += header;
+
+      for (size_t j = i; j < i + chunk_size && j < total; ++j) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), " R%03u=(%u)", results[j].first, results[j].second);
+        line += buf;
+      }
+
+      ESP_LOGI(TAG, "%s", line.c_str());
+    }
+
+    current_register = 0;  // Reset for future use
+    return;
+  }
+
+  // Read the current register
+  uint16_t reg = current_register;
+  this->handler_->read_register(addr, reg, 1, [this, addr, reg](bool ok, const std::vector<uint16_t> &data) {
+    if (ok && !data.empty()) {
+      results.emplace_back(reg, data[0]);
+    } else {
+      ESP_LOGW(TAG, "[0x%02X] Failed to read register %u", addr, reg);
+      results.emplace_back(reg, 0xFFFF);  // Optionally flag failed reads
+    }
+
+    current_register++;
+
+    // Continue after 30ms
+    this->set_timeout("dump_config", 30, [this, addr]() {
+      this->dump_configuration(static_cast<int>(addr));
+    });
+  });
 }
 
 // --- Climate Entity Registration ---

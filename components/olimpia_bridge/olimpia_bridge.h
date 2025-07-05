@@ -45,6 +45,7 @@ class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {
   // Home Assistant service methods
   void read_register(int address, int reg);
   void write_register(int address, int reg, int value);
+  void dump_configuration(int address);
 
  protected:
   // Hardware references
