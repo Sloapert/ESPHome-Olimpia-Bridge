@@ -9,10 +9,11 @@ namespace olimpia_bridge {
 
 static const char *const TAG = "orchestrator";
 
+// --- Component Setup ---
 void OlimpiaBridge::setup() {
   ESP_LOGI(TAG, "Setting up Olimpia Bridge");
 
-  // Set RE and DE pins (no direction pin check)
+  // Initialize RE/DE direction control pins
   if (this->re_pin_ != nullptr && this->de_pin_ != nullptr) {
     this->re_pin_->setup();
     this->de_pin_->setup();
@@ -24,41 +25,32 @@ void OlimpiaBridge::setup() {
     return;
   }
 
-  // Set UART for handler
+  // Connect Modbus handler to UART and control pins
   if (this->handler_) {
     this->handler_->set_uart(this->uart_);
     this->handler_->set_re_pin(this->re_pin_);
     this->handler_->set_de_pin(this->de_pin_);
   }
 
-  // Register FSM handler so its loop() is called
+  // Register handler as a component so loop() is called
   App.register_component(this->handler_);
-
   ESP_LOGI(TAG, "[Service] ModbusAsciiHandler initialized and registered");
 
-  // Register API services
-  this->register_service(&OlimpiaBridge::read_register,
-                         "read_register",
-                         {"address", "register"});
-  this->register_service(&OlimpiaBridge::write_register,
-                           "write_register",
-                           {"address", "register", "value"});
+  // Register custom Home Assistant services
+  this->register_service(&OlimpiaBridge::read_register, "read_register", {"address", "register"});
+  this->register_service(&OlimpiaBridge::write_register, "write_register", {"address", "register", "value"});
 
   ESP_LOGI(TAG, "OlimpiaBridge setup complete");
 
-  // Start periodic sync cycle for each climate
+  // Trigger initial sync for each attached climate entity
   for (auto *climate : this->climates_) {
-    climate->control_cycle();  // Triggers initial 101/102/103/1 sync
+    climate->control_cycle();  // Kick off 101/102/103/1 sync cycle
   }
 }
 
 // --- Periodic Update Cycle ---
 void OlimpiaBridge::update() {
   ESP_LOGD(TAG, "[Service] Running periodic control cycle for all climates...");
-  //for (auto *climate : this->climates_) {
-  //  climate->control_cycle();
-  //  climate->status_poll_cycle();
-  //}
 }
 
 // --- Home Assistant Service: Read Register ---
@@ -119,7 +111,7 @@ void OlimpiaBridge::write_register(int address, int reg, int value) {
   );
 }
 
-// --- Climate Registration ---
+// --- Climate Entity Registration ---
 void OlimpiaBridge::add_climate(OlimpiaBridgeClimate *climate) {
   this->climates_.push_back(climate);
 }

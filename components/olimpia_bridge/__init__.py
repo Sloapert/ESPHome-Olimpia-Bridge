@@ -5,6 +5,7 @@ from esphome.components import uart, climate, sensor
 from esphome import pins
 from esphome.const import CONF_ID, CONF_UART_ID, CONF_NAME, CONF_ADDRESS
 
+# --- Metadata ---
 CODEOWNERS = ["@r0bb10"]
 AUTO_LOAD = ["climate", "sensor", "uart"]
 DEPENDENCIES = ["uart"]
@@ -15,7 +16,7 @@ CONF_CLIMATES = "climates"
 CONF_WATER_TEMPERATURE_SENSOR = "water_temperature_sensor"
 CONF_EMA_ALPHA = "ema_alpha"
 
-# --- Define C++ classes ---
+# --- Define C++ class bindings ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
 OlimpiaBridge = olimpia_bridge_ns.class_("OlimpiaBridge", cg.Component, uart.UARTDevice)
 OlimpiaBridgeClimate = olimpia_bridge_ns.class_("OlimpiaBridgeClimate", climate.Climate, cg.Component)
@@ -44,27 +45,27 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Required(CONF_CLIMATES): cv.ensure_list(olimpia_bridge_climate_schema),
 }).extend(cv.COMPONENT_SCHEMA)
 
-# --- Code generation ---
+# --- Code generation logic ---
 async def to_code(config):
     # Instantiate OlimpiaBridge controller
     controller = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(controller, config)
 
-    # Bind UART
+    # Bind UART to OlimpiaBridge
     uart_var = await cg.get_variable(config[CONF_UART_ID])
     cg.add(controller.set_uart_parent(uart_var))
 
-    # Setup RE/DE pins
+    # Configure RE/DE GPIO pins
     re_pin = await cg.gpio_pin_expression(config["re_pin"])
     de_pin = await cg.gpio_pin_expression(config["de_pin"])
     cg.add(controller.set_re_pin(re_pin))
     cg.add(controller.set_de_pin(de_pin))
 
-    # Create and bind ModbusAsciiHandler
+    # Create and assign ModbusAsciiHandler
     handler = cg.new_Pvariable(config[CONF_HANDLER_ID])
     cg.add(controller.set_handler(handler))
 
-    # Climates
+    # Process each climate entity in configuration
     for climate_conf in config[CONF_CLIMATES]:
         climate_var = cg.new_Pvariable(climate_conf[CONF_ID])
         await climate.register_climate(climate_var, climate_conf)
@@ -75,6 +76,7 @@ async def to_code(config):
         cg.add(controller.add_climate(climate_var))
         cg.add(climate_var.set_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
 
+        # Optional water temperature sensor
         if CONF_WATER_TEMPERATURE_SENSOR in climate_conf:
             sens = await sensor.new_sensor(climate_conf[CONF_WATER_TEMPERATURE_SENSOR])
             cg.add(climate_var.set_water_temp_sensor(sens))

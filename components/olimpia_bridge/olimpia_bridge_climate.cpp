@@ -1,3 +1,4 @@
+// --- OLIMPIA BRIDGE CLIMATE COMPONENT ---
 #include "olimpia_bridge_climate.h"
 #include "esphome/core/log.h"
 
@@ -12,7 +13,8 @@ static const char *mode_to_string(Mode mode) {
     case Mode::AUTO: return "AUTO";
     case Mode::COOLING: return "COOL";
     case Mode::HEATING: return "HEAT";
-    case Mode::UNKNOWN: default: return "UNKNOWN";
+    case Mode::UNKNOWN:
+    default: return "UNKNOWN";
   }
 }
 
@@ -22,27 +24,28 @@ static const char *fan_speed_to_string(FanSpeed fan) {
     case FanSpeed::MIN: return "LOW";
     case FanSpeed::NIGHT: return "QUIET";
     case FanSpeed::MAX: return "HIGH";
-    case FanSpeed::UNKNOWN: default: return "UNKNOWN";
+    case FanSpeed::UNKNOWN:
+    default: return "UNKNOWN";
   }
 }
 
-// --- Register 101 encoder (bit-mapped control register) ---
+// --- Compose Register 101: Bit-mapped control flags ---
 uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpeed fan_speed) {
   uint16_t reg = 0;
 
-  // --- Bits 0–2: PRG fan speed ---
+  // Bits 0–2: PRG fan speed
   // 000 = Auto, 001 = Min, 010 = Night, 011 = Max
   reg |= static_cast<uint8_t>(fan_speed) & 0x07;
 
-  // --- Bit 7: STBY (working condition) ---
+  // Bit 7: STBY (working condition)
   // 0 = Activated, 1 = Standby (OFF)
   if (!on)
     reg |= (1 << 7);
 
-  // --- Bit 12: CP presence contact ---
+  // Bit 12: CP presence contact
   reg &= ~(1 << 12);  // Ensure CP is always 0
 
-  // --- Bits 13–14: EI mode of functioning ---
+  // Bits 13–14: EI mode of functioning
   // 10 = Cooling, 01 = Heating, 00 = Auto
   switch (mode) {
     case Mode::AUTO:
@@ -63,14 +66,12 @@ uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpe
 
 // --- Setup ---
 void OlimpiaBridgeClimate::setup() {
-  // --- System boot time mark ---
   this->system_boot_time_ms_ = millis();
 
-  // --- Prepare preference entries
+  // Load fallback ambient temperature from flash
   this->pref_ = global_preferences->make_preference<float>(this->get_object_id_hash() ^ 0x1030U);
   this->saved_state_pref_ = global_preferences->make_preference<SavedState>(this->get_object_id_hash() ^ 0x2040U);
 
-  // --- Load fallback external temp from flash
   float fallback = NAN;
   bool has_fallback = this->pref_.load(&fallback);
   if (has_fallback) {
@@ -82,7 +83,7 @@ void OlimpiaBridgeClimate::setup() {
     ESP_LOGD(TAG, "[%s] Climate setup → fallback_used=false (no flash value)", this->get_name().c_str());
   }
 
-  // --- Load or initialize climate control state
+  // Load or initialize climate state from flash
   SavedState recovered;
   bool found = this->saved_state_pref_.load(&recovered);
   if (found) {
@@ -96,7 +97,7 @@ void OlimpiaBridgeClimate::setup() {
              this->get_name().c_str(), static_cast<int>(this->mode_), static_cast<int>(this->fan_speed_),
              this->on_, this->target_temperature_);
   } else {
-    // --- First boot or flash reset: use defaults ---
+    // First boot or flash reset: use defaults
     this->on_ = false;
     this->mode_ = Mode::AUTO;  // Represent OFF via on_=false + AUTO
     this->fan_speed_ = FanSpeed::AUTO;
@@ -114,28 +115,19 @@ void OlimpiaBridgeClimate::setup() {
     this->saved_state_pref_.save(&default_state);
   }
 
-  // --- Sync fan_mode for HA UI
+  // Sync fan mode to Home Assistant UI
   switch (this->fan_speed_) {
-    case FanSpeed::AUTO:
-      this->fan_mode = climate::CLIMATE_FAN_AUTO;
-      break;
-    case FanSpeed::MIN:
-      this->fan_mode = climate::CLIMATE_FAN_LOW;
-      break;
-    case FanSpeed::NIGHT:
-      this->fan_mode = climate::CLIMATE_FAN_QUIET;
-      break;
-    case FanSpeed::MAX:
-      this->fan_mode = climate::CLIMATE_FAN_HIGH;
-      break;
-    default:
-      this->fan_mode = climate::CLIMATE_FAN_AUTO;
+    case FanSpeed::AUTO:  this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
+    case FanSpeed::MIN:   this->fan_mode = climate::CLIMATE_FAN_LOW; break;
+    case FanSpeed::NIGHT: this->fan_mode = climate::CLIMATE_FAN_QUIET; break;
+    case FanSpeed::MAX:   this->fan_mode = climate::CLIMATE_FAN_HIGH; break;
+    default:              this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
   }
 
-  this->target_temperature = this->target_temperature_;  // Sync for HA UI
-  this->publish_state();  // Ensure HA reflects the internal values immediately
+  this->target_temperature = this->target_temperature_;
+  this->publish_state();
 
-  // --- Read reg103 from Olimpia device ---
+  // Read reg103 (ambient temp) or push fallback to device
   if (this->handler_ != nullptr) {
     this->handler_->read_register(this->address_, 103, 1,
       [this, has_fallback, fallback](bool success, const std::vector<uint16_t> &data) {
@@ -159,16 +151,16 @@ void OlimpiaBridgeClimate::setup() {
       });
   }
 
-  // --- Initial read of water temperature at boot
+  // Read water temp from device
   this->read_water_temperature();
-  this->last_water_temp_poll_ = millis();  // Reset the polling timer
+  this->last_water_temp_poll_ = millis();
 
-  // Kick off 101/102 read sequence for power-loss detection and actual device state
+  // Start boot recovery or sync state
   this->restore_or_refresh_state();
 
-  // --- Initialize randomized per-device update schedules ---
-  this->next_control_cycle_ms_ = millis() + random(0, 60000);   // 0–60s
-  this->next_status_poll_ms_ = millis() + random(0, 30000);     // 0–30s
+  // Randomize per-device periodic poll intervals
+  this->next_control_cycle_ms_ = millis() + random(0, 60000);  // 0–60s
+  this->next_status_poll_ms_ = millis() + random(0, 30000);    // 0–30s
 }
 
 // --- Traits ---
@@ -193,7 +185,7 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
   return traits;
 }
 
-// --- HA control callback ---
+// --- Home Assistant control callback ---
 void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
   bool state_changed = false;
 
@@ -206,8 +198,7 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
 
   // Handle mode change
   if (call.get_mode().has_value()) {
-    auto new_mode = *call.get_mode();
-    switch (new_mode) {
+    switch (*call.get_mode()) {
       case climate::CLIMATE_MODE_OFF:
         this->on_ = false;
         this->mode_ = Mode::AUTO;  // OFF = on_=false + AUTO
@@ -232,11 +223,11 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
 
   // Handle fan mode change
   if (call.get_fan_mode().has_value()) {
-    auto new_fan = *call.get_fan_mode();
-    if (new_fan == climate::CLIMATE_FAN_AUTO) this->fan_speed_ = FanSpeed::AUTO;
-    else if (new_fan == climate::CLIMATE_FAN_LOW) this->fan_speed_ = FanSpeed::MIN;
-    else if (new_fan == climate::CLIMATE_FAN_QUIET) this->fan_speed_ = FanSpeed::NIGHT;
-    else if (new_fan == climate::CLIMATE_FAN_HIGH) this->fan_speed_ = FanSpeed::MAX;
+    auto fan = *call.get_fan_mode();
+    if (fan == climate::CLIMATE_FAN_AUTO) this->fan_speed_ = FanSpeed::AUTO;
+    else if (fan == climate::CLIMATE_FAN_LOW) this->fan_speed_ = FanSpeed::MIN;
+    else if (fan == climate::CLIMATE_FAN_QUIET) this->fan_speed_ = FanSpeed::NIGHT;
+    else if (fan == climate::CLIMATE_FAN_HIGH) this->fan_speed_ = FanSpeed::MAX;
     state_changed = true;
   }
 
@@ -269,12 +260,11 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
       ESP_LOGD(TAG, "[%s] State unchanged, skipping flash write", this->get_name().c_str());
     }
   }
-
   // Refresh state and publish it to UI
   this->restore_or_refresh_state();
 }
 
-// --- Register 1 (water temp) ---
+// --- Read Register 1 (water temperature) ---
 void OlimpiaBridgeClimate::read_water_temperature() {
   if (this->handler_ == nullptr || this->water_temp_sensor_ == nullptr) return;
 
@@ -294,29 +284,26 @@ void OlimpiaBridgeClimate::read_water_temperature() {
 void OlimpiaBridgeClimate::control_cycle() {
   const uint32_t now = millis();
 
-  // --- Skip control cycle if boot recovery is still in progress ---
+  // Skip control cycle if boot recovery is still in progress
   if (!this->boot_recovery_done_) {
     ESP_LOGD(TAG, "[%s] Skipping control cycle: boot recovery not complete", this->get_name().c_str());
     return;
-  }  
+  }
 
   // Update every 60s or on first boot
   if (!this->boot_cycle_done_ || (now - this->last_update_time_ >= 60000)) {
     ESP_LOGD(TAG, "[%s] Starting control cycle", this->get_name().c_str());
-
-    // --- Push control values to registers 101/102/103 ---
+    // Push control values to registers 101/102/103
     this->write_control_registers_cycle();
-
-    // --- Refresh current state from registers 101/102 ---
+    // Refresh current state from registers 101/102
     this->restore_or_refresh_state();
-
-    // --- Update timestamps ---
+    // Update timestamps
     this->last_update_time_ = now;
     this->boot_cycle_done_ = true;
   }
 }
 
-// --- FSM write 101 → 102 → 103 ---
+// --- FSM Write Sequence: Reg 101 → 102 → 103 ---
 void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> callback) {
   if (this->handler_ == nullptr) return;
 
@@ -325,12 +312,12 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
   uint16_t reg103 = std::isnan(this->external_ambient_temperature_) ? 0 : static_cast<uint16_t>(this->external_ambient_temperature_ * 10);
 
   ESP_LOGI(TAG, "[%s] Writing control → Power: %s | Mode: %s | Fan: %s | Target: %.1f°C | Ambient: %.1f°C",
-          this->get_name().c_str(),
-          this->on_ ? "ON" : "OFF",
-          mode_to_string(this->mode_),
-          fan_speed_to_string(this->fan_speed_),
-          this->target_temperature_,
-          this->external_ambient_temperature_);
+           this->get_name().c_str(),
+           this->on_ ? "ON" : "OFF",
+           mode_to_string(this->mode_),
+           fan_speed_to_string(this->fan_speed_),
+           this->target_temperature_,
+           this->external_ambient_temperature_);
 
   this->handler_->write_register(this->address_, 101, reg101, [this, reg102, reg103, callback](bool ok1, const std::vector<uint16_t> &) {
     if (!ok1) {
@@ -347,28 +334,28 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
       this->handler_->write_register(this->address_, 103, reg103, [this, callback](bool ok3, const std::vector<uint16_t> &) {
         if (!ok3) {
           ESP_LOGW(TAG, "[%s] Failed to write register 103", this->get_name().c_str());
-               return;
-              }
+          return;
+        }
 
-              // Delay slightly before checking valve status to allow hardware to react
-              if (callback) {
-                this->set_timeout("valve_status_check", 500, [callback]() {
-                  callback();
-                });
-              }
-            });
-        });
+        // Allow device time to process before action check
+        if (callback) {
+          this->set_timeout("valve_status_check", 500, [callback]() {
+            callback();
+          });
+        }
+      });
     });
+  });
 }
 
-// --- Update from parsed state (register 101) ---
+// --- Parse and Apply Register 101 State ---
 void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
-  // --- Copy state from parsed register 101
+  // Copy state from parsed register 101
   this->on_ = parsed.on;
   this->mode_ = parsed.mode;
   this->fan_speed_ = parsed.fan_speed;
 
-  // --- Map internal state to HA climate mode
+  // Map internal state to HA climate mode
   if (!this->on_) {
     this->mode = climate::CLIMATE_MODE_OFF;
   } else {
@@ -380,15 +367,13 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
         this->mode = climate::CLIMATE_MODE_COOL;
         break;
       case Mode::AUTO:
-        this->mode = climate::CLIMATE_MODE_AUTO;
-        break;
       default:
-        this->mode = climate::CLIMATE_MODE_OFF;
+        this->mode = climate::CLIMATE_MODE_AUTO;
         break;
     }
   }
 
-  // --- Map fan speed to HA fan mode
+  // Map fan speed to HA fan mode
   switch (this->fan_speed_) {
     case FanSpeed::AUTO:
       this->fan_mode = climate::CLIMATE_FAN_AUTO;
@@ -407,28 +392,25 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
       break;
   }
 
-  // --- Push temperatures to ESPHome climate state
+  // Push temperatures to ESPHome climate state
   this->current_temperature = this->external_ambient_temperature_;
   this->target_temperature = this->target_temperature_;  // use internal as reference for now
 
-  // --- Log state for debugging
   ESP_LOGD(TAG, "[%s] Updated state from reg101: ON=%d MODE=%d FAN=%d → current=%.1f°C target=%.1f°C",
            this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
            static_cast<int>(this->fan_speed_), this->current_temperature, this->target_temperature);
-
-  // --- Update action if requested
+  // Update action if requested
   this->update_climate_action_from_valve_status();
-
-  // --- Push state to HA
+  // Push state to HA
   this->publish_state();
 }
 
-// --- Compose Register 101 from Internal State ---
+// --- Compose Register 101 from State ---
 uint16_t OlimpiaBridgeClimate::get_status_register() {
   return this->build_command_register(this->on_, this->mode_, this->fan_speed_);
 }
 
-// --- External ambient temperature input (used for register 103) ---
+// --- External Ambient Temperature from HA ---
 void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   if (std::isnan(temp)) return;
 
@@ -442,16 +424,17 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   // Note: first_ha_ambient_received_ must stay false after fallback,
   // so first HA value is bypassed (and logs accordingly), but then enables EMA.
 
+  // Handle fallback and first-HA reception
   if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
     ESP_LOGI(TAG, "[%s] Restoring last known ambient from FLASH: %.1f°C", this->get_name().c_str(), temp);
     this->first_ha_ambient_received_ = false;  // Ensure bypass still happens on next HA update
-    this->smoothed_ambient_ = NAN;             // Defensive reset for EMA after reboots
+    this->smoothed_ambient_ = NAN;  // Defensive reset for EMA after reboots
   } else if (!this->first_ha_ambient_received_) {
     ESP_LOGI(TAG, "[%s] Fresh ambient received from HA: %.1f°C, enabling EMA!", this->get_name().c_str(), temp);
     this->first_ha_ambient_received_ = true;
     this->smoothed_ambient_ = NAN;  // Reset EMA
   } else {
-    // Optional smart EMA reset if inactive too long
+    // Smart EMA Reset if inactive too long
     if (now - this->last_external_temp_update_ > EMA_INACTIVITY_RESET_MS) {
       ESP_LOGI(TAG, "[%s] EMA reset due to inactivity. Accepting new ambient: %.1f°C", this->get_name().c_str(), temp);
       this->external_ambient_temperature_ = temp;
@@ -464,15 +447,9 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
       return;
     }
 
-    // EMA with trend-based early confirmation logic
+    // Exponential Moving Average smoothing logic with trend-based early confirmation logic
     float prev = this->smoothed_ambient_;
-    float ema;
-
-    if (std::isnan(prev)) {
-      ema = temp;
-    } else {
-      ema = this->ambient_ema_alpha_ * temp + (1.0f - this->ambient_ema_alpha_) * prev;
-    }
+    float ema = std::isnan(prev) ? temp : this->ambient_ema_alpha_ * temp + (1.0f - this->ambient_ema_alpha_) * prev;
 
     float rounded = std::round(ema * 10.0f) / 10.0f;
     float trend = ema - prev;
@@ -481,29 +458,27 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
 
     if (rounded != this->external_ambient_temperature_) {
       bool should_confirm = false;
-
       if (rounded > this->external_ambient_temperature_) {
         should_confirm = trend > 0 && ema >= (rounded - 0.02f);
       } else if (rounded < this->external_ambient_temperature_) {
         should_confirm = trend < 0 && ema <= (rounded + 0.02f);
       }
 
+      const char *trend_str = (trend > 0) ? "↑" : (trend < 0) ? "↓" : "→";
+
       if (!should_confirm) {
-        const char *trend_str = (trend > 0) ? "rising" : (trend < 0) ? "falling" : "steady";
-        ESP_LOGI(TAG, "[%s] EMA filtering active, temperature is %s! Received: %.1f°C Calculated: %.2f°C",
-                 this->get_name().c_str(), trend_str, temp, ema);
+        ESP_LOGI(TAG, "[%s] EMA rejected %.1f°C from HA → EMA %.2f°C (trend %s, held %.1f°C)",
+                 this->get_name().c_str(), temp, ema, trend_str, this->external_ambient_temperature_);
         return;
       }
 
       temp = rounded;
-      ESP_LOGI(TAG, "[%s] EMA confirmed new ambient: %.1f°C (trend %s, EMA=%.2f°C)",
-               this->get_name().c_str(), temp,
-               (trend > 0) ? "↑" : (trend < 0) ? "↓" : "→", ema);
+      ESP_LOGI(TAG, "[%s] EMA accepted %.1f°C from HA → EMA %.2f°C (trend %s)",
+               this->get_name().c_str(), temp, ema, trend_str);
     } else {
-      ESP_LOGI(TAG, "[%s] EMA confirmed ambient remains stable: %.1f°C", this->get_name().c_str(), temp);
+      ESP_LOGI(TAG, "[%s] EMA stable: %.1f°C (EMA %.2f°C)", this->get_name().c_str(), temp, ema);
     }
   }
-
   // Update memory state
   this->external_ambient_temperature_ = temp;
   this->current_temperature = temp;
@@ -540,7 +515,7 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
   this->target_temperature = this->target_temperature_;  // Sync to UI
   this->action = recovered.last_action;
 
-  // --- Sync fan mode to UI ---
+  // Sync fan mode for HA UI
   switch (this->fan_speed_) {
     case FanSpeed::AUTO:
       this->fan_mode = climate::CLIMATE_FAN_AUTO;
@@ -559,7 +534,7 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
       break;
   }
 
-  // --- Sync mode to UI ---
+  // Sync operating mode for HA UI
   switch (this->mode_) {
     case Mode::AUTO:
       this->mode = climate::CLIMATE_MODE_AUTO;
@@ -574,6 +549,7 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
       this->mode = climate::CLIMATE_MODE_AUTO;
       break;
   }
+
   if (!this->on_) {
     this->mode = climate::CLIMATE_MODE_OFF;
   }
@@ -587,17 +563,18 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
 
   const bool is_first_boot = !this->boot_recovery_done_;
 
-  // Guard only during first boot to avoid duplicate concurrent recoveries
+  // Skip duplicate recovery
   if (is_first_boot && this->boot_recovery_in_progress_)
     return;
 
   if (is_first_boot)
     this->boot_recovery_in_progress_ = true;
 
-  if (is_first_boot)
+  if (is_first_boot) {
     ESP_LOGI(TAG, "[%s] Boot state recovery: reading 101 + 102...", this->get_name().c_str());
-  else
+  } else {
     ESP_LOGD(TAG, "[%s] Refreshing state from device...", this->get_name().c_str());
+  }
 
   this->handler_->read_register(this->address_, 101, 1,
     [this, is_first_boot](bool ok101, const std::vector<uint16_t> &data101) {
@@ -626,9 +603,9 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           float target = data102[0] * 0.1f;
           ESP_LOGD(TAG, "[%s] Read 102 → target temperature: %.1f°C", this->get_name().c_str(), target);
 
-          // --- POWER-LOSS RECOVERY ---
+          // --- Power-Loss Recovery ---
           if (is_first_boot && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
-            ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from saved flash state", this->get_name().c_str());
+            ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from flash", this->get_name().c_str());
             this->apply_last_known_state();
             this->write_control_registers_cycle();  // Push corrected state back to device
 
@@ -640,12 +617,10 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
             return;
           }
 
-          // Set target temperature from register 102
+          // Set recovered target temperature
           this->target_temperature_ = target;
           this->target_temperature = target;
-
-          // Update internal + publish to HA
-          this->update_state_from_parsed(parsed);
+          this->update_state_from_parsed(parsed);  // Update internal + publish to HA
 
           ESP_LOGD(TAG, "[%s] Updated state → ON=%d MODE=%d FAN=%d target=%.1f°C",
                    this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
@@ -716,7 +691,6 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
                 this->get_name().c_str(), reg9,
                 climate::climate_action_to_string(this->action));
       }
-
       // Always publish state, even if unchanged
       this->publish_state();
     });
@@ -726,17 +700,17 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
 void OlimpiaBridgeClimate::status_poll_cycle() {
   const uint32_t now = millis();
 
-  // Skip polling until boot recovery is done
+  // Skip polling until boot recovery is complete
   if (!this->boot_recovery_done_)
     return;
 
-  // Call update of climate action based on valve
+  // Poll valve status (register 9)
   if (now - this->last_valve_status_poll_ > 30000UL) {
     this->last_valve_status_poll_ = now;
     this->update_climate_action_from_valve_status();
   }
 
-  // Call update of water temperature sensor
+  // Poll water temperature (register 1)
   if (now - this->last_water_temp_poll_ > 30000UL) {
     this->last_water_temp_poll_ = now;
     this->read_water_temperature();
@@ -760,21 +734,22 @@ void OlimpiaBridgeClimate::maybe_save_state() {
   }
 }
 
+// --- Main Loop: Schedule Updates ---
 void OlimpiaBridgeClimate::loop() {
   const uint32_t now = millis();
 
-  // Staggered 60s control cycle (write 101/102/103)
+  // Staggered 60s control cycle
   if (this->boot_recovery_done_ && now >= this->next_control_cycle_ms_) {
     this->next_control_cycle_ms_ = now + 60000 + random(0, 3000);  // 60s + jitter
     this->write_control_registers_cycle([this]() {
-      this->update_climate_action_from_valve_status();  // Follow-up action check
+      this->update_climate_action_from_valve_status();  // Follow-up read
     });
   }
 
-  // Staggered 30s status polling (reg 9 + reg 1)
+  // Staggered 30s polling cycle
   if (this->boot_recovery_done_ && now >= this->next_status_poll_ms_) {
     this->next_status_poll_ms_ = now + 30000 + random(0, 2000);  // 30s + jitter
-    this->status_poll_cycle();  // reg 9 + reg 1 reads
+    this->status_poll_cycle();
   }
 }
 
