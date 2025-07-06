@@ -53,6 +53,12 @@ void OlimpiaBridge::setup() {
 // --- Periodic Update Cycle ---
 void OlimpiaBridge::update() {
   ESP_LOGD(TAG, "[Service] Running periodic control cycle for all climates...");
+
+  // Update and publish error ratio sensor value
+  if (this->error_ratio_sensor_ && this->handler_) {
+    float error_ratio = this->handler_->get_error_ratio();
+    this->error_ratio_sensor_->publish_state(error_ratio);
+  }
 }
 
 // --- Home Assistant Service: Read Register ---

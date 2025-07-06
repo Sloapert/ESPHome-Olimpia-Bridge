@@ -52,6 +52,9 @@ class ModbusAsciiHandler : public esphome::Component {
   void write_byte(uint8_t byte);
   void loop() override;
 
+  // Error handling
+  float get_error_ratio() const;
+
  protected:
   // ASCII Frame Encoding/Decoding
   std::string encode_ascii_frame(const std::vector<uint8_t> &data);
@@ -74,6 +77,10 @@ class ModbusAsciiHandler : public esphome::Component {
   uart::UARTComponent *uart_{nullptr};
   GPIOPin *re_pin_{nullptr};
   GPIOPin *de_pin_{nullptr};
+
+  // Error tracking
+  uint32_t total_requests_{0};
+  uint32_t failed_requests_{0};
 };
 
 }  // namespace olimpia_bridge

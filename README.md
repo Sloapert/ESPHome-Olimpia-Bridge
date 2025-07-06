@@ -131,6 +131,9 @@ olimpia_bridge:
   uart_id: modbus_uart
   re_pin: GPIO35  # RE (Receive Enable)
   de_pin: GPIO33  # DE (Driver Enable)
+  error_ratio_sensor:
+    name: Modbus Error Ratio
+    unit_of_measurement: "%"
   climates:
     - id: living_room
       name: Living Room Fancoil

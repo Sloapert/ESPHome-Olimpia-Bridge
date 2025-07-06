@@ -8,6 +8,7 @@
 #include "esphome/components/api/custom_api_device.h"
 #include "modbus_ascii_handler.h"
 #include "olimpia_bridge_climate.h"
+#include "esphome/components/sensor/sensor.h"
 
 namespace esphome {
 namespace olimpia_bridge {
@@ -42,6 +43,8 @@ class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {
 
   void set_handler(ModbusAsciiHandler *handler) { this->handler_ = handler; }
 
+  void set_error_ratio_sensor(sensor::Sensor *sensor) { this->error_ratio_sensor_ = sensor; }
+
   // Home Assistant service methods
   void read_register(int address, int reg);
   void write_register(int address, int reg, int value);
@@ -55,6 +58,9 @@ class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {
 
   // Modbus handler
   ModbusAsciiHandler *handler_{nullptr};
+
+  // Error ratio sensor
+  sensor::Sensor *error_ratio_sensor_{nullptr};
 };
 
 }  // namespace olimpia_bridge

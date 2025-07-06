@@ -22,6 +22,12 @@ uint8_t ModbusAsciiHandler::compute_lrc(const std::vector<uint8_t> &data) {
   return static_cast<uint8_t>(-sum);  // Two's complement
 }
 
+// --- Error Ratio ---
+float ModbusAsciiHandler::get_error_ratio() const {
+  if (this->total_requests_ == 0) return 0.0f;
+  return static_cast<float>(this->failed_requests_ * 100) / this->total_requests_;
+}
+
 // --- Hex helper ---
 static constexpr char HEX_CHARS[] = "0123456789ABCDEF";
 
@@ -187,6 +193,7 @@ void ModbusAsciiHandler::loop() {
         ESP_LOGD(TAG, "[FSM] Transition: IDLE → SEND_REQUEST");
         this->fsm_state_ = ModbusState::SEND_REQUEST;
         last_state_change = millis();
+        this->total_requests_++;  // Increment total requests
       }
       break;
 
@@ -332,6 +339,7 @@ void ModbusAsciiHandler::loop() {
           this->current_request_.callback(false, {});
         this->fsm_state_ = ModbusState::IDLE;
         last_state_change = millis();
+        this->failed_requests_++;  // Increment failed requests
       }
       break;
   }

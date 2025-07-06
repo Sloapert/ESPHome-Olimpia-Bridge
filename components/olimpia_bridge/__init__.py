@@ -41,6 +41,9 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
     cv.Required("re_pin"): pins.gpio_output_pin_schema,
     cv.Required("de_pin"): pins.gpio_output_pin_schema,
+    cv.Required("error_ratio_sensor"): sensor.sensor_schema(
+        unit_of_measurement="%",
+    ),
     cv.Required(CONF_CLIMATES): cv.ensure_list(olimpia_bridge_climate_schema),
 }).extend(cv.COMPONENT_SCHEMA)
 
@@ -79,3 +82,7 @@ async def to_code(config):
         if CONF_WATER_TEMPERATURE_SENSOR in climate_conf:
             sens = await sensor.new_sensor(climate_conf[CONF_WATER_TEMPERATURE_SENSOR])
             cg.add(climate_var.set_water_temp_sensor(sens))
+
+    # Mandatory error ratio sensor
+    error_ratio_sensor = await sensor.new_sensor(config["error_ratio_sensor"])
+    cg.add(controller.set_error_ratio_sensor(error_ratio_sensor))
