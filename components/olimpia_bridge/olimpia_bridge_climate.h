@@ -41,6 +41,7 @@ struct SavedState {
   FanSpeed fan_speed;
   float target_temperature;
   climate::ClimateAction last_action;
+  char custom_preset[16];  // Fixed-size array for custom preset
 };
 
 // --- Utility to decode register 101 ---
@@ -88,6 +89,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_min_temperature(float min_temp) { this->min_temperature_ = min_temp; }
   void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
   void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }
+  void set_presets_enabled(bool enabled) { this->presets_enabled_ = enabled; }  // Update comment to reflect true/false for presets_enabled
 
   // State control and polling
   void status_poll_cycle();
@@ -135,6 +137,10 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   ESPPreferenceObject pref_;
   ESPPreferenceObject saved_state_pref_;
   SavedState last_saved_state_{};
+
+  // Custom virtual presets
+  std::string custom_preset_{"Auto"};
+  bool presets_enabled_{false};
 
   // External Temperature Management
   bool using_fallback_external_temp_{false};

@@ -190,6 +190,12 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
     traits.set_visual_max_temperature(this->max_temperature_);
   }
 
+  // Update traits to conditionally expose presets
+  if (this->presets_enabled_) {
+    traits.add_supported_custom_preset("Auto");
+    traits.add_supported_custom_preset("Manual");
+  }
+
   return traits;
 }
 
@@ -239,6 +245,18 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
     state_changed = true;
   }
 
+  // Handle custom preset change
+  if (call.get_custom_preset().has_value()) {
+    std::string preset = *call.get_custom_preset();
+    if (preset == "Auto" || preset == "Manual") {
+      this->custom_preset_ = preset;
+      ESP_LOGI(TAG, "[%s] Virtual preset set to %s", this->get_name().c_str(), preset.c_str());
+      state_changed = true;
+    } else {
+      ESP_LOGW(TAG, "[%s] Unsupported virtual preset: %s", this->get_name().c_str(), preset.c_str());
+    }
+  }
+
   // If any setting changed, apply and persist
   if (state_changed) {
     this->write_control_registers_cycle([this]() {
@@ -251,16 +269,20 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
       .mode = this->mode_,
       .fan_speed = this->fan_speed_,
       .target_temperature = this->target_temperature_,
-      .last_action = this->action
+      .last_action = this->action,
     };
+
+    // Safely copy custom_preset_ into the char[16] array
+    strncpy(current.custom_preset, this->custom_preset_.c_str(), sizeof(current.custom_preset) - 1);
+    current.custom_preset[sizeof(current.custom_preset) - 1] = '\0'; // Ensure null termination
 
     // Only save to flash if something actually changed
     if (memcmp(&this->last_saved_state_, &current, sizeof(SavedState)) != 0) {
       this->last_saved_state_ = current;
       if (this->saved_state_pref_.save(&current)) {
-        ESP_LOGD(TAG, "[%s] Updated user state saved to flash: mode=%d fan=%d on=%d target=%.1f°C",
+        ESP_LOGD(TAG, "[%s] Updated user state saved to flash: mode=%d fan=%d on=%d target=%.1f°C preset=%s",
                  this->get_name().c_str(), static_cast<int>(this->mode_), static_cast<int>(this->fan_speed_),
-                 this->on_, this->target_temperature_);
+                 this->on_, this->target_temperature_, this->custom_preset_.c_str());
       } else {
         ESP_LOGW(TAG, "[%s] Failed to save state to flash", this->get_name().c_str());
       }
@@ -404,9 +426,17 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
   this->current_temperature = this->external_ambient_temperature_;
   this->target_temperature = this->target_temperature_;  // use internal as reference for now
 
-  ESP_LOGD(TAG, "[%s] Updated state from reg101: ON=%d MODE=%d FAN=%d → current=%.1f°C target=%.1f°C",
+  // Apply custom preset
+  if (this->custom_preset_ == "Auto" || this->custom_preset_ == "Manual") {
+    this->custom_preset = this->custom_preset_;
+  } else {
+    this->custom_preset.reset();
+  }
+
+  ESP_LOGD(TAG, "[%s] Updated state from reg101: ON=%d MODE=%d FAN=%d → current=%.1f°C target=%.1f°C preset=%s",
            this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
-           static_cast<int>(this->fan_speed_), this->current_temperature, this->target_temperature);
+           static_cast<int>(this->fan_speed_), this->current_temperature, this->target_temperature,
+           this->custom_preset_.c_str());
   // Update action if requested
   this->update_climate_action_from_valve_status();
   // Push state to HA

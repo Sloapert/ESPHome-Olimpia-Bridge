@@ -24,6 +24,7 @@ This ESPHome version replicates the same communication behavior, supports multip
 - Custom HA services:  
   - `olimpia_bridge.write_register` (allows writing to configuration registers for advanced tuning parameters)
   - `olimpia_bridge.read_register` (manual reads for debugging) 
+- **Virtual presets**: Supports "Auto" and "Manual" presets for enhanced climate control via automation
 
 ## ⚙️ Architecture
 
