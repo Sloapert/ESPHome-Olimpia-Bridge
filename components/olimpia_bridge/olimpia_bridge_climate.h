@@ -85,6 +85,9 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_water_temp_sensor(sensor::Sensor *sensor) { this->water_temp_sensor_ = sensor; }
   void set_external_ambient_temperature(float temp);
   void set_ema_alpha(float alpha) { this->ambient_ema_alpha_ = alpha; }
+  void set_min_temperature(float min_temp) { this->min_temperature_ = min_temp; }
+  void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
+  void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }
 
   // State control and polling
   void status_poll_cycle();
@@ -147,6 +150,11 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   uint32_t last_update_time_{0};
   uint32_t next_control_cycle_ms_{0};
   uint32_t next_status_poll_ms_{0};
+
+  // Temperature limits and steps
+  float min_temperature_{15.0f};
+  float max_temperature_{30.0f};
+  float target_temperature_step_{0.5f};
 };
 
 }  // namespace olimpia_bridge

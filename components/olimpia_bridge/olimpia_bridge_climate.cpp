@@ -180,7 +180,16 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
     climate::CLIMATE_FAN_HIGH,
   });
   traits.set_visual_current_temperature_step(0.1);
-  traits.set_visual_target_temperature_step(0.5);
+  traits.set_visual_target_temperature_step(this->target_temperature_step_);
+
+  // Ensure min and max temperature traits are optional
+  if (!std::isnan(this->min_temperature_)) {
+    traits.set_visual_min_temperature(this->min_temperature_);
+  }
+  if (!std::isnan(this->max_temperature_)) {
+    traits.set_visual_max_temperature(this->max_temperature_);
+  }
+
   return traits;
 }
 

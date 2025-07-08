@@ -14,6 +14,9 @@ CONF_HANDLER_ID = "handler"
 CONF_CLIMATES = "climates"
 CONF_WATER_TEMPERATURE_SENSOR = "water_temperature_sensor"
 CONF_EMA_ALPHA = "ema_alpha"
+CONF_MIN_TEMPERATURE = "min_temperature"
+CONF_MAX_TEMPERATURE = "max_temperature"
+CONF_TARGET_TEMPERATURE_STEP = "target_temperature_step"
 
 # --- Define C++ class bindings ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
@@ -32,6 +35,9 @@ olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).ext
         device_class="temperature",
         state_class="measurement",
     ),
+    cv.Optional(CONF_MIN_TEMPERATURE, default=15.0): cv.float_,
+    cv.Optional(CONF_MAX_TEMPERATURE, default=30.0): cv.float_,
+    cv.Optional(CONF_TARGET_TEMPERATURE_STEP, default=0.5): cv.float_,
 })
 
 # --- Top-level configuration schema ---
@@ -77,6 +83,11 @@ async def to_code(config):
         cg.add(climate_var.set_handler(handler))
         cg.add(controller.add_climate(climate_var))
         cg.add(climate_var.set_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
+
+        # Set temperature traits
+        cg.add(climate_var.set_min_temperature(climate_conf[CONF_MIN_TEMPERATURE]))
+        cg.add(climate_var.set_max_temperature(climate_conf[CONF_MAX_TEMPERATURE]))
+        cg.add(climate_var.set_target_temperature_step(climate_conf[CONF_TARGET_TEMPERATURE_STEP]))
 
         # Optional water temperature sensor
         if CONF_WATER_TEMPERATURE_SENSOR in climate_conf:
