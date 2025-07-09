@@ -187,12 +187,18 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
   climate::ClimateTraits traits;
   traits.set_supports_current_temperature(true);
   traits.set_supports_action(true);
-  traits.set_supported_modes({
+
+  // Conditionally expose AUTO mode based on config
+  std::set<climate::ClimateMode> supported_modes = {
     climate::CLIMATE_MODE_OFF,
     climate::CLIMATE_MODE_COOL,
-    climate::CLIMATE_MODE_HEAT,
-    climate::CLIMATE_MODE_AUTO,
-  });
+    climate::CLIMATE_MODE_HEAT
+  };
+  if (!this->disable_mode_auto_) {
+    supported_modes.insert(climate::CLIMATE_MODE_AUTO);
+  }
+  traits.set_supported_modes(supported_modes);
+
   traits.set_supported_fan_modes({
     climate::CLIMATE_FAN_AUTO,
     climate::CLIMATE_FAN_LOW,

@@ -89,6 +89,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_min_temperature(float min_temp) { this->min_temperature_ = min_temp; }
   void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
   void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }
+  void set_disable_mode_auto(bool disable) { this->disable_mode_auto_ = disable; }
   void set_presets_enabled(bool enabled) { this->presets_enabled_ = enabled; }  // Update comment to reflect true/false for presets_enabled
 
   // State control and polling
@@ -140,7 +141,10 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // Custom virtual presets
   std::string custom_preset_{"Auto"};
-  bool presets_enabled_{false};
+  bool presets_enabled_ = true;
+
+  // Disable AUTO mode in HA
+  bool disable_mode_auto_ = false;
 
   // External Temperature Management
   bool using_fallback_external_temp_{false};

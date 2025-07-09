@@ -18,6 +18,7 @@ CONF_MIN_TEMPERATURE = "min_temperature"
 CONF_MAX_TEMPERATURE = "max_temperature"
 CONF_TARGET_TEMPERATURE_STEP = "target_temperature_step"
 CONF_PRESETS_ENABLED = "presets"
+CONF_DISABLE_MODE_AUTO = "disable_mode_auto"
 
 # --- Define C++ class bindings ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
@@ -40,6 +41,7 @@ olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).ext
     cv.Optional(CONF_MAX_TEMPERATURE, default=30.0): cv.float_,
     cv.Optional(CONF_TARGET_TEMPERATURE_STEP, default=0.5): cv.float_,
     cv.Optional(CONF_PRESETS_ENABLED, default=False): cv.boolean,
+    cv.Optional(CONF_DISABLE_MODE_AUTO, default=False): cv.boolean,
 })
 
 # --- Top-level configuration schema ---
@@ -98,6 +100,8 @@ async def to_code(config):
 
         # Set presets_enabled flag
         cg.add(climate_var.set_presets_enabled(climate_conf[CONF_PRESETS_ENABLED]))
+        # Set disable_mode_auto flag
+        cg.add(climate_var.set_disable_mode_auto(climate_conf[CONF_DISABLE_MODE_AUTO]))
 
     # Mandatory error ratio sensor
     error_ratio_sensor = await sensor.new_sensor(config["error_ratio_sensor"])

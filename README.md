@@ -146,12 +146,16 @@ olimpia_bridge:
         accuracy_decimals: 1
         device_class: temperature
         state_class: measurement
+      presets_enabled: false      # Optional: Expose custom presets (Auto/Manual) to HA (default: false)
+      disable_mode_auto: false    # Optional: Hide AUTO mode from HA (default: false)
 
     - id: bedroom
       name: Bedroom Unit
       address: 2
       ema_alpha: 0.1  # More smoothing
       # No water_temperature_sensor defined for this unit
+      presets_enabled: true       # Optional: Expose custom presets (Auto/Manual) to HA (default: false)
+      disable_mode_auto: true    # Optional: Hide AUTO mode from HA (default: false)
 ```
 
 ### 🔄 Ambient Temperature Injection
