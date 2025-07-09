@@ -28,6 +28,12 @@ static const char *fan_speed_to_string(FanSpeed fan) {
   }
 }
 
+static std::string presets_to_uppercase(const std::string &str) {
+  std::string out = str;
+  for (auto &c : out) c = toupper(c);
+  return out;
+}
+
 // --- Compose Register 101: Bit-mapped control flags ---
 uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpeed fan_speed) {
   uint16_t reg = 0;
@@ -91,18 +97,30 @@ void OlimpiaBridgeClimate::setup() {
     this->fan_speed_ = recovered.fan_speed;
     this->target_temperature_ = recovered.target_temperature;
     this->last_saved_state_ = recovered;
+    this->custom_preset_ = recovered.custom_preset;
 
-    ESP_LOGI(TAG, "[%s] Recovered last saved user state → mode=%d fan=%d on=%d target=%.1f°C",
-             this->get_name().c_str(), static_cast<int>(this->mode_), static_cast<int>(this->fan_speed_),
-             this->on_, this->target_temperature_);
+    ESP_LOGI(TAG, "[%s] Recovered state from flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
+             this->get_name().c_str(),
+             recovered.on ? "ON" : "OFF",
+             mode_to_string(static_cast<Mode>(recovered.mode)),
+             fan_speed_to_string(static_cast<FanSpeed>(recovered.fan_speed)),
+             presets_to_uppercase(recovered.custom_preset).c_str(),
+             recovered.target_temperature);
   } else {
     // First boot or flash reset: use defaults
     this->on_ = false;
     this->mode_ = Mode::AUTO;  // Represent OFF via on_=false + AUTO
     this->fan_speed_ = FanSpeed::AUTO;
     this->target_temperature_ = 22.0f;
+    this->custom_preset_ = "Auto";
 
-    ESP_LOGW(TAG, "[%s] No saved user state found, applying default climate state (OFF, 22°C, FAN AUTO)", this->get_name().c_str());
+    ESP_LOGW(TAG, "[%s] No saved user state found, applying default: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
+             this->get_name().c_str(),
+             this->on_ ? "ON" : "OFF",
+             mode_to_string(this->mode_),
+             fan_speed_to_string(this->fan_speed_),
+             presets_to_uppercase(this->custom_preset_).c_str(),
+             this->target_temperature_);
 
     SavedState default_state{
       .on = this->on_,
@@ -110,6 +128,8 @@ void OlimpiaBridgeClimate::setup() {
       .fan_speed = this->fan_speed_,
       .target_temperature = this->target_temperature_,
     };
+    strncpy(default_state.custom_preset, this->custom_preset_.c_str(), sizeof(default_state.custom_preset) - 1);
+    default_state.custom_preset[sizeof(default_state.custom_preset) - 1] = '\0';
     this->last_saved_state_ = default_state;
     this->saved_state_pref_.save(&default_state);
   }
@@ -250,10 +270,10 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
     std::string preset = *call.get_custom_preset();
     if (preset == "Auto" || preset == "Manual") {
       this->custom_preset_ = preset;
-      ESP_LOGI(TAG, "[%s] Virtual preset set to %s", this->get_name().c_str(), preset.c_str());
+      ESP_LOGI(TAG, "[%s] Virtual preset set to %s", this->get_name().c_str(), presets_to_uppercase(preset).c_str());
       state_changed = true;
     } else {
-      ESP_LOGW(TAG, "[%s] Unsupported virtual preset: %s", this->get_name().c_str(), preset.c_str());
+      ESP_LOGW(TAG, "[%s] Unsupported virtual preset: %s", this->get_name().c_str(), presets_to_uppercase(preset).c_str());
     }
   }
 
@@ -280,9 +300,13 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
     if (memcmp(&this->last_saved_state_, &current, sizeof(SavedState)) != 0) {
       this->last_saved_state_ = current;
       if (this->saved_state_pref_.save(&current)) {
-        ESP_LOGD(TAG, "[%s] Updated user state saved to flash: mode=%d fan=%d on=%d target=%.1f°C preset=%s",
-                 this->get_name().c_str(), static_cast<int>(this->mode_), static_cast<int>(this->fan_speed_),
-                 this->on_, this->target_temperature_, this->custom_preset_.c_str());
+        ESP_LOGD(TAG, "[%s] Updated user state saved to flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
+                 this->get_name().c_str(),
+                 this->on_ ? "ON" : "OFF",
+                 mode_to_string(this->mode_),
+                 fan_speed_to_string(this->fan_speed_),
+                 presets_to_uppercase(this->custom_preset_).c_str(),
+                 this->target_temperature_);
       } else {
         ESP_LOGW(TAG, "[%s] Failed to save state to flash", this->get_name().c_str());
       }
@@ -341,11 +365,12 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
   uint16_t reg102 = static_cast<uint16_t>(this->target_temperature_ * 10);
   uint16_t reg103 = std::isnan(this->external_ambient_temperature_) ? 0 : static_cast<uint16_t>(this->external_ambient_temperature_ * 10);
 
-  ESP_LOGI(TAG, "[%s] Writing control → Power: %s | Mode: %s | Fan: %s | Target: %.1f°C | Ambient: %.1f°C",
+  ESP_LOGI(TAG, "[%s] Writing control → Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C | Ambient: %.1f°C",
            this->get_name().c_str(),
            this->on_ ? "ON" : "OFF",
            mode_to_string(this->mode_),
            fan_speed_to_string(this->fan_speed_),
+           presets_to_uppercase(this->custom_preset_).c_str(),
            this->target_temperature_,
            this->external_ambient_temperature_);
 
@@ -433,10 +458,14 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
     this->custom_preset.reset();
   }
 
-  ESP_LOGD(TAG, "[%s] Updated state from reg101: ON=%d MODE=%d FAN=%d → current=%.1f°C target=%.1f°C preset=%s",
-           this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
-           static_cast<int>(this->fan_speed_), this->current_temperature, this->target_temperature,
-           this->custom_preset_.c_str());
+  ESP_LOGD(TAG, "[%s] Updated state from reg101: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C | Ambient: %.1f°C",
+           this->get_name().c_str(),
+           this->on_ ? "ON" : "OFF",
+           mode_to_string(this->mode_),
+           fan_speed_to_string(this->fan_speed_),
+           presets_to_uppercase(this->custom_preset_).c_str(),
+           this->target_temperature,
+           this->current_temperature);
   // Update action if requested
   this->update_climate_action_from_valve_status();
   // Push state to HA
@@ -538,9 +567,13 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
   SavedState recovered{};
   if (this->saved_state_pref_.load(&recovered)) {
     this->last_saved_state_ = recovered;
-    ESP_LOGI(TAG, "[%s] Recovered state from flash: on=%d mode=%d fan=%d target=%.1f",
-             this->get_name().c_str(),
-             recovered.on, recovered.mode, recovered.fan_speed, recovered.target_temperature);
+    ESP_LOGI(TAG, "[%s] Recovered state from flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
+         this->get_name().c_str(),
+         recovered.on ? "ON" : "OFF",
+         mode_to_string(static_cast<Mode>(recovered.mode)),
+         fan_speed_to_string(static_cast<FanSpeed>(recovered.fan_speed)),
+         presets_to_uppercase(recovered.custom_preset).c_str(),
+         recovered.target_temperature);
   } else {
     ESP_LOGW(TAG, "[%s] No saved state found in flash, skipping recovery", this->get_name().c_str());
     return;
@@ -552,6 +585,7 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
   this->target_temperature_ = recovered.target_temperature;
   this->target_temperature = this->target_temperature_;  // Sync to UI
   this->action = recovered.last_action;
+  this->custom_preset_ = recovered.custom_preset;
 
   // Sync fan mode for HA UI
   switch (this->fan_speed_) {
@@ -692,10 +726,7 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
       bool ev1     = (high_byte & 0b01000000) != 0;  // Bit 6
       bool boiler  = (high_byte & 0b00100000) != 0;  // Bit 5
       bool chiller = (high_byte & 0b00010000) != 0;  // Bit 4
-
-      climate::ClimateAction new_action = climate::CLIMATE_ACTION_OFF;
-
-      // Ensure OFF action is only used when truly OFF
+      auto new_action = this->action;  // Start with current action as default
       if (!this->on_) {
         new_action = climate::CLIMATE_ACTION_OFF;
       } else if (ev1) {
