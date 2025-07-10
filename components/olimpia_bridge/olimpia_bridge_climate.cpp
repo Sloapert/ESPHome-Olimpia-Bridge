@@ -457,7 +457,8 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
   this->current_temperature = this->external_ambient_temperature_;
   this->target_temperature = this->target_temperature_;  // use internal as reference for now
 
-  // Apply custom preset
+  // Always restore the preset from flash, since the device does not store it
+  this->custom_preset_ = this->last_saved_state_.custom_preset;
   if (this->custom_preset_ == "Auto" || this->custom_preset_ == "Manual") {
     this->custom_preset = this->custom_preset_;
   } else {
@@ -789,23 +790,6 @@ void OlimpiaBridgeClimate::status_poll_cycle() {
   if (now - this->last_water_temp_poll_ > 30000UL) {
     this->last_water_temp_poll_ = now;
     this->read_water_temperature();
-  }
-}
-
-// --- Conditional State Persistence ---
-void OlimpiaBridgeClimate::maybe_save_state() {
-  this->last_saved_state_ = {
-    .on = this->on_,
-    .mode = this->mode_,
-    .fan_speed = this->fan_speed_,
-    .target_temperature = this->target_temperature_,
-    .last_action = this->action
-  };
-
-  if (this->saved_state_pref_.save(&this->last_saved_state_)) {
-    ESP_LOGD(TAG, "[%s] Climate state saved to flash", this->get_name().c_str());
-  } else {
-    ESP_LOGW(TAG, "[%s] Failed to save climate state to flash", this->get_name().c_str());
   }
 }
 

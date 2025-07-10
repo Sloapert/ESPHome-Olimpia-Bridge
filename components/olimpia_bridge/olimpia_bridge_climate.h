@@ -96,7 +96,6 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void status_poll_cycle();
   void control_cycle();
   void apply_last_known_state();
-  void maybe_save_state();
   void restore_or_refresh_state();
   void update_climate_action_from_valve_status();
   void read_water_temperature();
