@@ -685,13 +685,16 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           // --- Power-Loss Recovery ---
           if (is_first_boot && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
             ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from flash", this->get_name().c_str());
+            this->boot_recovery_in_progress_ = true; // Ensure flag is set
             this->apply_last_known_state();
-            this->write_control_registers_cycle();  // Push corrected state back to device
-
-            // Mark recovery as done, even in fallback case
+            this->write_control_registers_cycle([this]() {
+              // After writing, force a fresh state read and publish, then clear recovery flag
+              this->restore_or_refresh_state();
+              this->boot_recovery_in_progress_ = false;
+            });
+            // Do not mark recovery as done until the callback above completes
             this->boot_recovery_done_ = true;
             this->block_control_until_recovery_ = false;
-            this->boot_recovery_in_progress_ = false;
             ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Enabling control.", this->get_name().c_str());
             return;
           }
