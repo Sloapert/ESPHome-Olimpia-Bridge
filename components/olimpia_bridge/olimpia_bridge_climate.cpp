@@ -12,8 +12,7 @@ static const char *mode_to_string(Mode mode) {
     case Mode::AUTO: return "AUTO";
     case Mode::COOLING: return "COOL";
     case Mode::HEATING: return "HEAT";
-    case Mode::UNKNOWN:
-    default: return "UNKNOWN";
+    default: return "AUTO";
   }
 }
 
@@ -23,8 +22,7 @@ static const char *fan_speed_to_string(FanSpeed fan) {
     case FanSpeed::MIN: return "LOW";
     case FanSpeed::NIGHT: return "QUIET";
     case FanSpeed::MAX: return "HIGH";
-    case FanSpeed::UNKNOWN:
-    default: return "UNKNOWN";
+    default: return "AUTO";
   }
 }
 
@@ -99,7 +97,7 @@ void OlimpiaBridgeClimate::setup() {
     this->last_saved_state_ = recovered;
     this->custom_preset_ = recovered.custom_preset;
 
-    ESP_LOGI(TAG, "[%s] Recovered state from flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
+    ESP_LOGCONFIG(TAG, "[%s] Recovered state from flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
              this->get_name().c_str(),
              recovered.on ? "ON" : "OFF",
              mode_to_string(static_cast<Mode>(recovered.mode)),
@@ -161,7 +159,7 @@ void OlimpiaBridgeClimate::setup() {
           this->handler_->write_register(this->address_, 103, reg,
             [this, fallback](bool success, const std::vector<uint16_t> &) {
               if (success) {
-                ESP_LOGI(TAG, "[%s] Pushed fallback external temp %.1f°C to register 103 on boot", this->get_name().c_str(), fallback);
+                ESP_LOGCONFIG(TAG, "[%s] Pushed fallback external temp %.1f°C to register 103 on boot", this->get_name().c_str(), fallback);
               } else {
                 ESP_LOGW(TAG, "[%s] Failed to write fallback external temp to register 103", this->get_name().c_str());
               }
@@ -172,13 +170,11 @@ void OlimpiaBridgeClimate::setup() {
 
   // Read water temp from device
   this->read_water_temperature();
-  this->last_water_temp_poll_ = millis();
 
   // Start boot recovery or sync state
   this->restore_or_refresh_state();
 
   // Randomize per-device periodic poll intervals
-  this->next_control_cycle_ms_ = millis() + random(0, 60000);  // 0–60s
   this->next_status_poll_ms_ = millis() + random(0, 30000);    // 0–30s
 }
 
@@ -285,11 +281,29 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
 
   // If any setting changed, apply and persist
   if (state_changed) {
-    this->write_control_registers_cycle([this]() {
-      // Immediately check for action status after user control
-      this->update_climate_action_from_valve_status();
-    });
+    // 1. Optimistically update the UI state for instant feedback
+    this->target_temperature = this->target_temperature_;
+    if (!this->on_) {
+      this->mode = climate::CLIMATE_MODE_OFF;
+    } else {
+      switch (this->mode_) {
+        case Mode::HEATING: this->mode = climate::CLIMATE_MODE_HEAT; break;
+        case Mode::COOLING: this->mode = climate::CLIMATE_MODE_COOL; break;
+        case Mode::AUTO:
+        default: this->mode = climate::CLIMATE_MODE_AUTO; break;
+      }
+    }
+    switch (this->fan_speed_) {
+      case FanSpeed::AUTO: this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
+      case FanSpeed::MIN: this->fan_mode = climate::CLIMATE_FAN_LOW; break;
+      case FanSpeed::NIGHT: this->fan_mode = climate::CLIMATE_FAN_QUIET; break;
+      case FanSpeed::MAX: this->fan_mode = climate::CLIMATE_FAN_HIGH; break;
+      default: this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
+    }
+    this->custom_preset = this->custom_preset_;
+    this->publish_state(); // Publish optimistic state
 
+    // 2. Persist the new state to flash
     SavedState current{
       .on = this->on_,
       .mode = this->mode_,
@@ -297,31 +311,23 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
       .target_temperature = this->target_temperature_,
       .last_action = this->action,
     };
-
-    // Safely copy custom_preset_ into the char[16] array
     strncpy(current.custom_preset, this->custom_preset_.c_str(), sizeof(current.custom_preset) - 1);
-    current.custom_preset[sizeof(current.custom_preset) - 1] = '\0'; // Ensure null termination
+    current.custom_preset[sizeof(current.custom_preset) - 1] = '\0';
 
-    // Only save to flash if something actually changed
     if (memcmp(&this->last_saved_state_, &current, sizeof(SavedState)) != 0) {
       this->last_saved_state_ = current;
       if (this->saved_state_pref_.save(&current)) {
-        ESP_LOGD(TAG, "[%s] Updated user state saved to flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
-                 this->get_name().c_str(),
-                 this->on_ ? "ON" : "OFF",
-                 mode_to_string(this->mode_),
-                 fan_speed_to_string(this->fan_speed_),
-                 presets_to_uppercase(this->custom_preset_).c_str(),
-                 this->target_temperature_);
+        ESP_LOGD(TAG, "[%s] Updated user state saved to flash", this->get_name().c_str());
       } else {
         ESP_LOGW(TAG, "[%s] Failed to save state to flash", this->get_name().c_str());
       }
-    } else {
-      ESP_LOGD(TAG, "[%s] State unchanged, skipping flash write", this->get_name().c_str());
     }
+
+    // 3. Write to device and then read back valve status to confirm action
+    this->write_control_registers_cycle([this]() {
+      this->update_climate_action_from_valve_status();
+    });
   }
-  // Refresh state and publish it to UI
-  this->restore_or_refresh_state();
 }
 
 // --- Read Register 1 (water temperature) ---
@@ -335,32 +341,24 @@ void OlimpiaBridgeClimate::read_water_temperature() {
     }
 
     float temp = data[0] * 0.1f;
-    ESP_LOGI(TAG, "[%s] Water temperature: %.1f°C", this->get_name().c_str(), temp);
+    ESP_LOGD(TAG, "[%s] Water temperature: %.1f°C", this->get_name().c_str(), temp);
     this->water_temp_sensor_->publish_state(temp);
   });
 }
 
-// --- Periodic FSM control cycle ---
-void OlimpiaBridgeClimate::control_cycle() {
-  const uint32_t now = millis();
-
-  // Skip control cycle if boot recovery is still in progress
-  if (!this->boot_recovery_done_) {
-    ESP_LOGD(TAG, "[%s] Skipping control cycle: boot recovery not complete", this->get_name().c_str());
-    return;
-  }
-
-  // Update every 60s or on first boot
-  if (!this->boot_cycle_done_ || (now - this->last_update_time_ >= 60000)) {
-    ESP_LOGD(TAG, "[%s] Starting control cycle", this->get_name().c_str());
-    // Push control values to registers 101/102/103
-    this->write_control_registers_cycle();
-    // Refresh current state from registers 101/102
+// --- Unified Periodic Sync ---
+void OlimpiaBridgeClimate::periodic_sync() {
+  // This function is called periodically by loop() to keep the device state in sync.
+  
+  // 1. Perform the keep-alive write. This sends the current HA state to the device.
+  this->write_control_registers_cycle([this]() {
+    // 2. After writing, read back the full state to ensure everything is in sync.
+    // This reads registers 101, 102, and 9 (valve status).
     this->restore_or_refresh_state();
-    // Update timestamps
-    this->last_update_time_ = now;
-    this->boot_cycle_done_ = true;
-  }
+
+    // 3. Also refresh the optional water temperature sensor.
+    this->read_water_temperature();
+  });
 }
 
 // --- FSM Write Sequence: Reg 101 → 102 → 103 ---
@@ -400,7 +398,7 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
 
         // Allow device time to process before action check
         if (callback) {
-          this->set_timeout("valve_status_check", 500, [callback]() {
+          this->set_timeout("valve_status_check", 300, [callback]() {
             callback();
           });
         }
@@ -775,43 +773,14 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
     });
 }
 
-// --- Periodic Polling Cycle (Valve Status + Water Temp) ---
-void OlimpiaBridgeClimate::status_poll_cycle() {
-  const uint32_t now = millis();
-
-  // Skip polling until boot recovery is complete
-  if (!this->boot_recovery_done_)
-    return;
-
-  // Poll valve status (register 9)
-  if (now - this->last_valve_status_poll_ > 30000UL) {
-    this->last_valve_status_poll_ = now;
-    this->update_climate_action_from_valve_status();
-  }
-
-  // Poll water temperature (register 1)
-  if (now - this->last_water_temp_poll_ > 30000UL) {
-    this->last_water_temp_poll_ = now;
-    this->read_water_temperature();
-  }
-}
-
 // --- Main Loop: Schedule Updates ---
 void OlimpiaBridgeClimate::loop() {
   const uint32_t now = millis();
 
-  // Staggered 60s control cycle
-  if (this->boot_recovery_done_ && now >= this->next_control_cycle_ms_) {
-    this->next_control_cycle_ms_ = now + 60000 + random(0, 3000);  // 60s + jitter
-    this->write_control_registers_cycle([this]() {
-      this->update_climate_action_from_valve_status();  // Follow-up read
-    });
-  }
-
-  // Staggered 30s polling cycle
+  // Unified 60s periodic sync cycle
   if (this->boot_recovery_done_ && now >= this->next_status_poll_ms_) {
-    this->next_status_poll_ms_ = now + 30000 + random(0, 2000);  // 30s + jitter
-    this->status_poll_cycle();
+    this->next_status_poll_ms_ = now + 60000 + random(0, 5000);  // 60s + jitter
+    this->periodic_sync();
   }
 }
 

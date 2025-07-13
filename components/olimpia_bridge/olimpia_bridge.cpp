@@ -12,7 +12,7 @@ static const char *const TAG = "orchestrator";
 
 // --- Component Setup ---
 void OlimpiaBridge::setup() {
-  ESP_LOGI(TAG, "Setting up Olimpia Bridge");
+  ESP_LOGCONFIG(TAG, "Setting up Olimpia Bridge");
 
   // Initialize RE/DE direction control pins
   if (this->re_pin_ != nullptr && this->de_pin_ != nullptr) {
@@ -35,19 +35,14 @@ void OlimpiaBridge::setup() {
 
   // Register handler as a component so loop() is called
   App.register_component(this->handler_);
-  ESP_LOGI(TAG, "[Service] ModbusAsciiHandler initialized and registered");
+  ESP_LOGCONFIG(TAG, "[Service] ModbusAsciiHandler initialized and registered");
 
   // Register custom Home Assistant services
   this->register_service(&OlimpiaBridge::read_register, "read_register", {"address", "register"});
   this->register_service(&OlimpiaBridge::write_register, "write_register", {"address", "register", "value"});
   this->register_service(&OlimpiaBridge::dump_configuration, "dump_config", {"address"});
 
-  ESP_LOGI(TAG, "OlimpiaBridge setup complete");
-
-  // Trigger initial sync for each attached climate entity
-  for (auto *climate : this->climates_) {
-    climate->control_cycle();  // Kick off 101/102/103/1 sync cycle
-  }
+  ESP_LOGCONFIG(TAG, "OlimpiaBridge setup complete");
 }
 
 // --- Periodic Update Cycle ---

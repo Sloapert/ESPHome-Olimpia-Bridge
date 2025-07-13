@@ -14,7 +14,6 @@ enum class Mode : uint8_t {
   AUTO     = 0,
   COOLING  = 1,
   HEATING  = 2,
-  UNKNOWN  = 0xFF
 };
 
 // --- Fan speed levels (PRG bits 0–2) ---
@@ -23,15 +22,14 @@ enum class FanSpeed : uint8_t {
   MIN     = 0b001,
   NIGHT   = 0b010,
   MAX     = 0b011,
-  UNKNOWN = 0xFF
 };
 
 // --- Parsed register 101 state ---
 struct ParsedState {
   bool on = false;
   bool cp = false;
-  FanSpeed fan_speed = FanSpeed::UNKNOWN;
-  Mode mode = Mode::UNKNOWN;
+  FanSpeed fan_speed = FanSpeed::AUTO;
+  Mode mode = Mode::AUTO;
 };
 
 // --- Persisted state structure ---
@@ -57,7 +55,7 @@ inline ParsedState parse_command_register(uint16_t reg) {
     case 0b00: st.mode = Mode::AUTO; break;
     case 0b01: st.mode = Mode::HEATING; break;
     case 0b10: st.mode = Mode::COOLING; break;
-    default:   st.mode = Mode::UNKNOWN; break;
+    default:   st.mode = Mode::AUTO; break;
   }
 
   switch (fan) {
@@ -65,7 +63,7 @@ inline ParsedState parse_command_register(uint16_t reg) {
     case 0x01: st.fan_speed = FanSpeed::MIN; break;
     case 0x02: st.fan_speed = FanSpeed::NIGHT; break;
     case 0x03: st.fan_speed = FanSpeed::MAX; break;
-    default:   st.fan_speed = FanSpeed::UNKNOWN; break;
+    default:   st.fan_speed = FanSpeed::AUTO; break;
   }
 
   return st;
@@ -92,9 +90,9 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_disable_mode_auto(bool disable) { this->disable_mode_auto_ = disable; }
   void set_presets_enabled(bool enabled) { this->presets_enabled_ = enabled; }  // Update comment to reflect true/false for presets_enabled
 
+ protected:
   // State control and polling
-  void status_poll_cycle();
-  void control_cycle();
+  void periodic_sync();
   void apply_last_known_state();
   void restore_or_refresh_state();
   void update_climate_action_from_valve_status();
@@ -104,7 +102,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   uint16_t build_command_register(bool on, Mode mode, FanSpeed fan_speed);
   void write_control_registers_cycle(std::function<void()> callback = nullptr);
 
- protected:
+  // Internal state updates
   void update_state_from_parsed(const ParsedState &parsed);
   uint16_t get_status_register();
 
@@ -130,8 +128,8 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   bool boot_recovery_in_progress_{false};
   bool boot_recovery_done_{false};
   bool block_control_until_recovery_{true};
-  Mode mode_{Mode::UNKNOWN};
-  FanSpeed fan_speed_{FanSpeed::UNKNOWN};
+  Mode mode_{Mode::AUTO};
+  FanSpeed fan_speed_{FanSpeed::AUTO};
 
   // Persistence
   ESPPreferenceObject pref_;
@@ -154,10 +152,6 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // Timing
   uint32_t system_boot_time_ms_{0};
-  uint32_t last_valve_status_poll_{0};
-  uint32_t last_water_temp_poll_{0};
-  uint32_t last_update_time_{0};
-  uint32_t next_control_cycle_ms_{0};
   uint32_t next_status_poll_ms_{0};
 
   // Temperature limits and steps
