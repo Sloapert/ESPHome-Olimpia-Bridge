@@ -1,9 +1,9 @@
 #include <vector>
 #include <utility>
 #include "esphome.h"
+#include "esphome/core/log.h"
 #include "olimpia_bridge.h"
 #include "olimpia_bridge_climate.h"
-#include "esphome/core/log.h"
 
 namespace esphome {
 namespace olimpia_bridge {

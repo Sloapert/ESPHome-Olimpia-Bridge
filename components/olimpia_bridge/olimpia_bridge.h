@@ -2,16 +2,16 @@
 
 #include <vector>
 #include "esphome/core/gpio.h"
-#include "esphome/core/helpers.h"
 #include "esphome/core/component.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/api/custom_api_device.h"
-#include "modbus_ascii_handler.h"
-#include "olimpia_bridge_climate.h"
 #include "esphome/components/sensor/sensor.h"
+#include "modbus_ascii_handler.h"
 
 namespace esphome {
 namespace olimpia_bridge {
+
+class OlimpiaBridgeClimate;  // Forward declaration
 
 // --- OlimpiaBridge Component ---
 class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {

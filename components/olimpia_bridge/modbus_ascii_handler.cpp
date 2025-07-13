@@ -1,5 +1,5 @@
-#include "modbus_ascii_handler.h"
 #include "esphome/core/log.h"
+#include "modbus_ascii_handler.h"
 
 namespace esphome {
 namespace olimpia_bridge {
@@ -133,18 +133,6 @@ void ModbusAsciiHandler::write_register(uint8_t address, uint16_t reg, uint16_t 
   req.is_write = true;
   req.callback = std::move(callback);
   this->add_request(req);
-}
-
-// --- Byte write ---
-void ModbusAsciiHandler::write_byte(uint8_t byte) {
-  if (this->uart_ != nullptr)
-    this->uart_->write_byte(byte);
-}
-
-// --- Build full ASCII request ---
-std::vector<uint8_t> ModbusAsciiHandler::build_request_frame_ascii_(const std::vector<uint8_t> &data) {
-  std::string ascii = this->encode_ascii_frame(data);
-  return std::vector<uint8_t>(ascii.begin(), ascii.end());
 }
 
 // --- Add request to queue ---

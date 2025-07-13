@@ -3,9 +3,9 @@
 #include <queue>
 #include <vector>
 #include <functional>
+#include "esphome/core/gpio.h"
 #include "esphome/core/component.h"
 #include "esphome/components/uart/uart.h"
-#include "esphome/core/gpio.h"
 
 namespace esphome {
 namespace olimpia_bridge {
@@ -49,7 +49,6 @@ class ModbusAsciiHandler : public esphome::Component {
   void write_register(uint8_t address, uint16_t reg, uint16_t value,
                       std::function<void(bool success, std::vector<uint16_t> response)> callback);
 
-  void write_byte(uint8_t byte);
   void loop() override;
 
   // Error handling
@@ -62,7 +61,6 @@ class ModbusAsciiHandler : public esphome::Component {
   uint8_t compute_lrc(const std::vector<uint8_t> &data);
 
   // FSM Frame Building & Response
-  std::vector<uint8_t> build_request_frame_ascii_(const std::vector<uint8_t> &data);
   bool read_available_();
 
   // FSM State
