@@ -157,6 +157,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   // Timing
   uint32_t system_boot_time_ms_{0};
   uint32_t next_status_poll_ms_{0};
+  uint32_t next_recovery_attempt_ms_{0};
 
   // Temperature limits and steps
   float min_temperature_{15.0f};

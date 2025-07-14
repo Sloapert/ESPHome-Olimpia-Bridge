@@ -772,6 +772,13 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
 void OlimpiaBridgeClimate::loop() {
   const uint32_t now = millis();
 
+  // Handle initial boot/recovery retries if stuck
+  if (this->component_state_ != ComponentState::RUNNING && now >= this->next_recovery_attempt_ms_) {
+    ESP_LOGW(TAG, "[%s] Component is not running, attempting recovery...", this->get_name().c_str());
+    this->restore_or_refresh_state();
+    this->next_recovery_attempt_ms_ = now + 15000; // Retry every 15 seconds
+  }
+
   // Unified 60s periodic sync cycle, only when running
   if (this->component_state_ == ComponentState::RUNNING && now >= this->next_status_poll_ms_) {
     this->next_status_poll_ms_ = now + 60000 + random(0, 5000);  // 60s + jitter
