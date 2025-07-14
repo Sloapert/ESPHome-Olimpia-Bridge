@@ -9,6 +9,15 @@
 namespace esphome {
 namespace olimpia_bridge {
 
+// Timing constants (in milliseconds)
+static constexpr uint32_t VALVE_STATUS_CHECK_DELAY_MS = 300;
+static constexpr uint32_t RECOVERY_RETRY_INTERVAL_MS = 15000;
+static constexpr uint32_t PERIODIC_SYNC_INTERVAL_MS = 60000;
+static constexpr uint32_t PERIODIC_SYNC_JITTER_MS = 5000;
+static constexpr uint32_t INITIAL_POLL_JITTER_MS = 30000;
+static constexpr uint32_t EXTERNAL_TEMP_FLASH_WRITE_INTERVAL_MS = 3600000;  // 1 hour
+static constexpr uint32_t EMA_INACTIVITY_RESET_MS = 900000;                  // 15 minutes
+
 // --- Operating modes (EI field in register 101) ---
 enum class Mode : uint8_t {
   AUTO     = 0,
@@ -90,7 +99,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_handler(ModbusAsciiHandler *handler) { this->handler_ = handler; }
   void set_water_temp_sensor(sensor::Sensor *sensor) { this->water_temp_sensor_ = sensor; }
   void set_external_ambient_temperature(float temp);
-  void set_ema_alpha(float alpha) { this->ambient_ema_alpha_ = alpha; }
+  void set_ambient_ema_alpha(float alpha) { this->ambient_ema_alpha_ = alpha; }
   void set_min_temperature(float min_temp) { this->min_temperature_ = min_temp; }
   void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
   void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }

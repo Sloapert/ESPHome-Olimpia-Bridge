@@ -86,7 +86,7 @@ async def to_code(config):
         cg.add(climate_var.set_address(climate_conf[CONF_ADDRESS]))
         cg.add(climate_var.set_handler(handler))
         cg.add(controller.add_climate(climate_var))
-        cg.add(climate_var.set_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
+        cg.add(climate_var.set_ambient_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
 
         # Set temperature traits
         cg.add(climate_var.set_min_temperature(climate_conf[CONF_MIN_TEMPERATURE]))

@@ -175,7 +175,7 @@ void OlimpiaBridgeClimate::setup() {
   this->restore_or_refresh_state();
 
   // Randomize per-device periodic poll intervals
-  this->next_status_poll_ms_ = millis() + random(0, 30000);    // 0–30s
+  this->next_status_poll_ms_ = millis() + random(0, INITIAL_POLL_JITTER_MS);
 }
 
 // --- Traits ---
@@ -403,7 +403,7 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
 
         // Allow device time to process before action check
         if (callback) {
-          this->set_timeout("valve_status_check", 300, [callback]() {
+          this->set_timeout("valve_status_check", VALVE_STATUS_CHECK_DELAY_MS, [callback]() {
             callback();
           });
         }
@@ -493,10 +493,8 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
 
   const uint32_t now = millis();
   bool first_time = !this->has_received_external_temp_;
-  bool refresh_flash = (now - this->last_external_temp_flash_write_ > 3600000UL);
+  bool refresh_flash = (now - this->last_external_temp_flash_write_ > EXTERNAL_TEMP_FLASH_WRITE_INTERVAL_MS);
   bool temp_changed = std::abs(temp - this->external_ambient_temperature_) > 0.05f;
-
-  constexpr uint32_t EMA_INACTIVITY_RESET_MS = 15 * 60 * 1000UL;  // 15 minutes
 
   // Note: first_ha_ambient_received_ must stay false after fallback,
   // so first HA value is bypassed (and logs accordingly), but then enables EMA.
@@ -776,12 +774,12 @@ void OlimpiaBridgeClimate::loop() {
   if (this->component_state_ != ComponentState::RUNNING && now >= this->next_recovery_attempt_ms_) {
     ESP_LOGW(TAG, "[%s] Component is not running, attempting recovery...", this->get_name().c_str());
     this->restore_or_refresh_state();
-    this->next_recovery_attempt_ms_ = now + 15000; // Retry every 15 seconds
+    this->next_recovery_attempt_ms_ = now + RECOVERY_RETRY_INTERVAL_MS;  // Retry every 15 seconds
   }
 
   // Unified 60s periodic sync cycle, only when running
   if (this->component_state_ == ComponentState::RUNNING && now >= this->next_status_poll_ms_) {
-    this->next_status_poll_ms_ = now + 60000 + random(0, 5000);  // 60s + jitter
+    this->next_status_poll_ms_ = now + PERIODIC_SYNC_INTERVAL_MS + random(0, PERIODIC_SYNC_JITTER_MS);  // 60s + jitter
     this->periodic_sync();
   }
 }
