@@ -32,6 +32,44 @@ static std::string presets_to_uppercase(const std::string &str) {
   return out;
 }
 
+// --- Centralized state mapping and publishing ---
+climate::ClimateMode OlimpiaBridgeClimate::mode_conversion() {
+  if (!this->on_) {
+    return climate::CLIMATE_MODE_OFF;
+  }
+  switch (this->mode_) {
+    case Mode::HEATING: return climate::CLIMATE_MODE_HEAT;
+    case Mode::COOLING: return climate::CLIMATE_MODE_COOL;
+    case Mode::AUTO:    return climate::CLIMATE_MODE_AUTO;
+    default:            return climate::CLIMATE_MODE_AUTO;
+  }
+}
+
+optional<climate::ClimateFanMode> OlimpiaBridgeClimate::fan_conversion() {
+  switch (this->fan_speed_) {
+    case FanSpeed::AUTO:  return climate::CLIMATE_FAN_AUTO;
+    case FanSpeed::MIN:   return climate::CLIMATE_FAN_LOW;
+    case FanSpeed::NIGHT: return climate::CLIMATE_FAN_QUIET;
+    case FanSpeed::MAX:   return climate::CLIMATE_FAN_HIGH;
+    default:              return climate::CLIMATE_FAN_AUTO;
+  }
+}
+
+void OlimpiaBridgeClimate::sync_and_publish() {
+  this->mode = this->mode_conversion();
+  this->fan_mode = this->fan_conversion();
+  this->target_temperature = this->target_temperature_;
+  this->current_temperature = this->external_ambient_temperature_;
+
+  if (this->custom_preset_ == "Auto" || this->custom_preset_ == "Manual") {
+    this->custom_preset = this->custom_preset_;
+  } else {
+    this->custom_preset.reset();
+  }
+
+  this->publish_state();
+}
+
 // --- Compose Register 101: Bit-mapped control flags ---
 uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpeed fan_speed) {
   uint16_t reg = 0;
@@ -132,17 +170,8 @@ void OlimpiaBridgeClimate::setup() {
     this->saved_state_pref_.save(&default_state);
   }
 
-  // Sync fan mode to Home Assistant UI
-  switch (this->fan_speed_) {
-    case FanSpeed::AUTO:  this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
-    case FanSpeed::MIN:   this->fan_mode = climate::CLIMATE_FAN_LOW; break;
-    case FanSpeed::NIGHT: this->fan_mode = climate::CLIMATE_FAN_QUIET; break;
-    case FanSpeed::MAX:   this->fan_mode = climate::CLIMATE_FAN_HIGH; break;
-    default:              this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
-  }
-
-  this->target_temperature = this->target_temperature_;
-  this->publish_state();
+  // Sync state to Home Assistant UI and publish
+  this->sync_and_publish();
 
   // Read reg103 (ambient temp) or push fallback to device
   if (this->handler_ != nullptr) {
@@ -153,7 +182,7 @@ void OlimpiaBridgeClimate::setup() {
           this->external_ambient_temperature_ = reg103;
           this->reg103_read_from_device_ = true;
           ESP_LOGD(TAG, "[%s] Read 103 → external ambient temperature: %.2f°C", this->get_name().c_str(), reg103);
-          this->publish_state();
+          this->sync_and_publish();
         } else if (has_fallback && !this->external_temp_received_from_ha_) {
           uint16_t reg = static_cast<uint16_t>(fallback * 10);
           this->handler_->write_register(this->address_, 103, reg,
@@ -287,26 +316,7 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
   // If any setting changed, apply and persist
   if (state_changed) {
     // 1. Optimistically update the UI state for instant feedback
-    this->target_temperature = this->target_temperature_;
-    if (!this->on_) {
-      this->mode = climate::CLIMATE_MODE_OFF;
-    } else {
-      switch (this->mode_) {
-        case Mode::HEATING: this->mode = climate::CLIMATE_MODE_HEAT; break;
-        case Mode::COOLING: this->mode = climate::CLIMATE_MODE_COOL; break;
-        case Mode::AUTO:
-        default: this->mode = climate::CLIMATE_MODE_AUTO; break;
-      }
-    }
-    switch (this->fan_speed_) {
-      case FanSpeed::AUTO: this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
-      case FanSpeed::MIN: this->fan_mode = climate::CLIMATE_FAN_LOW; break;
-      case FanSpeed::NIGHT: this->fan_mode = climate::CLIMATE_FAN_QUIET; break;
-      case FanSpeed::MAX: this->fan_mode = climate::CLIMATE_FAN_HIGH; break;
-      default: this->fan_mode = climate::CLIMATE_FAN_AUTO; break;
-    }
-    this->custom_preset = this->custom_preset_;
-    this->publish_state(); // Publish optimistic state
+    this->sync_and_publish();
 
     // 2. Persist the new state to flash
     SavedState current{
@@ -419,54 +429,8 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
   this->mode_ = parsed.mode;
   this->fan_speed_ = parsed.fan_speed;
 
-  // Map internal state to HA climate mode
-  if (!this->on_) {
-    this->mode = climate::CLIMATE_MODE_OFF;
-  } else {
-    switch (this->mode_) {
-      case Mode::HEATING:
-        this->mode = climate::CLIMATE_MODE_HEAT;
-        break;
-      case Mode::COOLING:
-        this->mode = climate::CLIMATE_MODE_COOL;
-        break;
-      case Mode::AUTO:
-      default:
-        this->mode = climate::CLIMATE_MODE_AUTO;
-        break;
-    }
-  }
-
-  // Map fan speed to HA fan mode
-  switch (this->fan_speed_) {
-    case FanSpeed::AUTO:
-      this->fan_mode = climate::CLIMATE_FAN_AUTO;
-      break;
-    case FanSpeed::MIN:
-      this->fan_mode = climate::CLIMATE_FAN_LOW;
-      break;
-    case FanSpeed::NIGHT:
-      this->fan_mode = climate::CLIMATE_FAN_QUIET;
-      break;
-    case FanSpeed::MAX:
-      this->fan_mode = climate::CLIMATE_FAN_HIGH;
-      break;
-    default:
-      this->fan_mode.reset();
-      break;
-  }
-
-  // Push temperatures to ESPHome climate state
-  this->current_temperature = this->external_ambient_temperature_;
-  this->target_temperature = this->target_temperature_;  // use internal as reference for now
-
   // Always restore the preset from flash, since the device does not store it
   this->custom_preset_ = this->last_saved_state_.custom_preset;
-  if (this->custom_preset_ == "Auto" || this->custom_preset_ == "Manual") {
-    this->custom_preset = this->custom_preset_;
-  } else {
-    this->custom_preset.reset();
-  }
 
   ESP_LOGD(TAG, "[%s] Updated state from reg101: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C | Ambient: %.1f°C",
            this->get_name().c_str(),
@@ -476,10 +440,10 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
            presets_to_uppercase(this->custom_preset_).c_str(),
            this->target_temperature,
            this->current_temperature);
-  // Update action if requested
+  
+  // Update action and publish state to HA
   this->update_climate_action_from_valve_status();
-  // Push state to HA
-  this->publish_state();
+  this->sync_and_publish();
 }
 
 // --- Compose Register 101 from State ---
@@ -567,7 +531,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     this->using_fallback_external_temp_ = false;
   }
 
-  this->publish_state();
+  this->sync_and_publish();
 }
 
 // --- Restore Saved State from Flash ---
@@ -591,50 +555,10 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
   this->mode_ = recovered.mode;
   this->fan_speed_ = recovered.fan_speed;
   this->target_temperature_ = recovered.target_temperature;
-  this->target_temperature = this->target_temperature_;  // Sync to UI
   this->action = recovered.last_action;
   this->custom_preset_ = recovered.custom_preset;
 
-  // Sync fan mode for HA UI
-  switch (this->fan_speed_) {
-    case FanSpeed::AUTO:
-      this->fan_mode = climate::CLIMATE_FAN_AUTO;
-      break;
-    case FanSpeed::MIN:
-      this->fan_mode = climate::CLIMATE_FAN_LOW;
-      break;
-    case FanSpeed::NIGHT:
-      this->fan_mode = climate::CLIMATE_FAN_QUIET;
-      break;
-    case FanSpeed::MAX:
-      this->fan_mode = climate::CLIMATE_FAN_HIGH;
-      break;
-    default:
-      this->fan_mode = climate::CLIMATE_FAN_AUTO;
-      break;
-  }
-
-  // Sync operating mode for HA UI
-  switch (this->mode_) {
-    case Mode::AUTO:
-      this->mode = climate::CLIMATE_MODE_AUTO;
-      break;
-    case Mode::COOLING:
-      this->mode = climate::CLIMATE_MODE_COOL;
-      break;
-    case Mode::HEATING:
-      this->mode = climate::CLIMATE_MODE_HEAT;
-      break;
-    default:
-      this->mode = climate::CLIMATE_MODE_AUTO;
-      break;
-  }
-
-  if (!this->on_) {
-    this->mode = climate::CLIMATE_MODE_OFF;
-  }
-
-  this->publish_state();
+  this->sync_and_publish();
 }
 
 // --- Boot State Recovery or Manual Refresh ---
@@ -761,8 +685,8 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
                 this->get_name().c_str(), reg9,
                 climate::climate_action_to_string(this->action));
       }
-      // Always publish state, even if unchanged
-      this->publish_state();
+      // Always publish state, even if action is unchanged, to sync other properties
+      this->sync_and_publish();
     });
 }
 
