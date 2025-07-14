@@ -20,9 +20,9 @@ static constexpr uint32_t EMA_INACTIVITY_RESET_MS = 900000;                  // 
 
 // --- Operating modes (EI field in register 101) ---
 enum class Mode : uint8_t {
-  AUTO     = 0,
-  COOLING  = 1,
-  HEATING  = 2,
+  AUTO     = 0b00,
+  HEATING  = 0b01,
+  COOLING  = 0b10,
 };
 
 // --- Fan speed levels (PRG bits 0–2) ---
