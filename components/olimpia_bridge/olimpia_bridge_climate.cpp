@@ -223,6 +223,11 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
 
 // --- Home Assistant control callback ---
 void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
+  if (this->component_state_ != ComponentState::RUNNING) {
+    ESP_LOGW(TAG, "[%s] Control is blocked during boot/recovery.", this->get_name().c_str());
+    return;
+  }
+
   bool state_changed = false;
 
   // Handle target temperature change
@@ -638,27 +643,25 @@ void OlimpiaBridgeClimate::apply_last_known_state() {
 void OlimpiaBridgeClimate::restore_or_refresh_state() {
   if (this->handler_ == nullptr) return;
 
-  const bool is_first_boot = !this->boot_recovery_done_;
-
-  // Skip duplicate recovery
-  if (is_first_boot && this->boot_recovery_in_progress_)
+  if (this->component_state_ == ComponentState::RECOVERING) {
+    ESP_LOGD(TAG, "[%s] Recovery already in progress, skipping.", this->get_name().c_str());
     return;
+  }
 
-  if (is_first_boot)
-    this->boot_recovery_in_progress_ = true;
+  bool is_boot_cycle = (this->component_state_ == ComponentState::BOOTING);
 
-  if (is_first_boot) {
+  if (is_boot_cycle) {
     ESP_LOGI(TAG, "[%s] Boot state recovery: reading 101 + 102...", this->get_name().c_str());
+    this->component_state_ = ComponentState::RECOVERING;
   } else {
     ESP_LOGD(TAG, "[%s] Refreshing state from device...", this->get_name().c_str());
   }
 
   this->handler_->read_register(this->address_, 101, 1,
-    [this, is_first_boot](bool ok101, const std::vector<uint16_t> &data101) {
+    [this, is_boot_cycle](bool ok101, const std::vector<uint16_t> &data101) {
       if (!ok101 || data101.empty()) {
         ESP_LOGW(TAG, "[%s] Failed to read register 101", this->get_name().c_str());
-        if (is_first_boot)
-          this->boot_recovery_in_progress_ = false;
+        if (is_boot_cycle) this->component_state_ = ComponentState::BOOTING; // Allow retry
         return;
       }
 
@@ -669,11 +672,10 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
                reg101, parsed.on, parsed.mode, static_cast<int>(parsed.fan_speed));
 
       this->handler_->read_register(this->address_, 102, 1,
-        [this, parsed, is_first_boot](bool ok102, const std::vector<uint16_t> &data102) {
+        [this, parsed, is_boot_cycle](bool ok102, const std::vector<uint16_t> &data102) {
           if (!ok102 || data102.empty()) {
             ESP_LOGW(TAG, "[%s] Failed to read register 102", this->get_name().c_str());
-            if (is_first_boot)
-              this->boot_recovery_in_progress_ = false;
+            if (is_boot_cycle) this->component_state_ = ComponentState::BOOTING; // Allow retry
             return;
           }
 
@@ -681,19 +683,14 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           ESP_LOGD(TAG, "[%s] Read 102 → target temperature: %.1f°C", this->get_name().c_str(), target);
 
           // --- Power-Loss Recovery ---
-          if (is_first_boot && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
+          if (is_boot_cycle && parsed.mode == Mode::AUTO && std::abs(target - 22.0f) < 0.2f) {
             ESP_LOGW(TAG, "[%s] Detected fallback state (AUTO + 22.0°C), restoring from flash", this->get_name().c_str());
-            this->boot_recovery_in_progress_ = true; // Ensure flag is set
             this->apply_last_known_state();
             this->write_control_registers_cycle([this]() {
-              // After writing, force a fresh state read and publish, then clear recovery flag
-              this->restore_or_refresh_state();
-              this->boot_recovery_in_progress_ = false;
+              this->restore_or_refresh_state(); // Re-sync after write
+              this->component_state_ = ComponentState::RUNNING;
+              ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Component is RUNNING.", this->get_name().c_str());
             });
-            // Do not mark recovery as done until the callback above completes
-            this->boot_recovery_done_ = true;
-            this->block_control_until_recovery_ = false;
-            ESP_LOGI(TAG, "[%s] Boot recovery fallback applied. Enabling control.", this->get_name().c_str());
             return;
           }
 
@@ -706,11 +703,9 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
                    this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
                    static_cast<int>(this->fan_speed_), this->target_temperature_);
 
-          if (is_first_boot) {
-            this->boot_recovery_done_ = true;
-            this->block_control_until_recovery_ = false;
-            this->boot_recovery_in_progress_ = false;
-            ESP_LOGI(TAG, "[%s] Boot register read complete. Enabling control.", this->get_name().c_str());
+          if (is_boot_cycle) {
+            this->component_state_ = ComponentState::RUNNING;
+            ESP_LOGI(TAG, "[%s] Boot register read complete. Component is RUNNING.", this->get_name().c_str());
           }
         });
     });
@@ -777,8 +772,8 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
 void OlimpiaBridgeClimate::loop() {
   const uint32_t now = millis();
 
-  // Unified 60s periodic sync cycle
-  if (this->boot_recovery_done_ && now >= this->next_status_poll_ms_) {
+  // Unified 60s periodic sync cycle, only when running
+  if (this->component_state_ == ComponentState::RUNNING && now >= this->next_status_poll_ms_) {
     this->next_status_poll_ms_ = now + 60000 + random(0, 5000);  // 60s + jitter
     this->periodic_sync();
   }

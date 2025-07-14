@@ -24,6 +24,13 @@ enum class FanSpeed : uint8_t {
   MAX     = 0b011,
 };
 
+// --- Component State ---
+enum class ComponentState : uint8_t {
+  BOOTING,
+  RECOVERING,
+  RUNNING,
+};
+
 // --- Parsed register 101 state ---
 struct ParsedState {
   bool on = false;
@@ -88,7 +95,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
   void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }
   void set_disable_mode_auto(bool disable) { this->disable_mode_auto_ = disable; }
-  void set_presets_enabled(bool enabled) { this->presets_enabled_ = enabled; }  // Update comment to reflect true/false for presets_enabled
+  void set_presets_enabled(bool enabled) { this->presets_enabled_ = enabled; }
 
  protected:
   // State control and polling
@@ -124,10 +131,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // Device power and control state
   bool on_{false};
-  bool boot_cycle_done_{false};
-  bool boot_recovery_in_progress_{false};
-  bool boot_recovery_done_{false};
-  bool block_control_until_recovery_{true};
+  ComponentState component_state_{ComponentState::BOOTING};
   Mode mode_{Mode::AUTO};
   FanSpeed fan_speed_{FanSpeed::AUTO};
 
