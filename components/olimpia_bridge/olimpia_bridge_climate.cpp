@@ -329,7 +329,6 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
   
   // Update action and publish state to HA
   this->update_climate_action_from_valve_status();
-  this->sync_and_publish();
 }
 
 // --- Compose Register 101 from State ---
@@ -531,6 +530,9 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
 // --- Valve Status → Climate Action Mapping ---
 void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
   if (this->handler_ == nullptr) return;
+
+  // Publish the primary state change immediately for UI responsiveness
+  this->sync_and_publish();
 
   this->handler_->read_register(this->address_, 9, 1,
     [this](bool success, const std::vector<uint16_t> &data) {
