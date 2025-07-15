@@ -111,8 +111,6 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
  protected:
   // State sync and publish
   void sync_and_publish();
-  climate::ClimateMode mode_conversion();
-  optional<climate::ClimateFanMode> fan_conversion();
 
   // State control and polling
   void periodic_sync();

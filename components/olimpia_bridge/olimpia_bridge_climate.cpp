@@ -6,24 +6,58 @@ namespace olimpia_bridge {
 
 static const char *const TAG = "climate";
 
+namespace {
+
+struct ModeInfo {
+  Mode value;
+  const char* name;
+  climate::ClimateMode climate_mode;
+};
+
+struct FanSpeedInfo {
+  FanSpeed value;
+  const char* name;
+  climate::ClimateFanMode climate_fan_mode;
+};
+
+static constexpr ModeInfo MODE_INFO[] = {
+    {Mode::AUTO, "AUTO", climate::CLIMATE_MODE_AUTO},
+    {Mode::HEATING, "HEAT", climate::CLIMATE_MODE_HEAT},
+    {Mode::COOLING, "COOL", climate::CLIMATE_MODE_COOL},
+};
+
+static constexpr FanSpeedInfo FAN_SPEED_INFO[] = {
+    {FanSpeed::AUTO, "AUTO", climate::CLIMATE_FAN_AUTO},
+    {FanSpeed::MIN, "LOW", climate::CLIMATE_FAN_LOW},
+    {FanSpeed::NIGHT, "QUIET", climate::CLIMATE_FAN_QUIET},
+    {FanSpeed::MAX, "HIGH", climate::CLIMATE_FAN_HIGH},
+};
+
+// Helper to find ModeInfo by Mode enum
+const ModeInfo& get_mode_info(Mode mode) {
+  for (const auto& info : MODE_INFO) {
+    if (info.value == mode) return info;
+  }
+  return MODE_INFO[0]; // Default to AUTO
+}
+
+// Helper to find FanSpeedInfo by FanSpeed enum
+const FanSpeedInfo& get_fan_speed_info(FanSpeed fan_speed) {
+  for (const auto& info : FAN_SPEED_INFO) {
+    if (info.value == fan_speed) return info;
+  }
+  return FAN_SPEED_INFO[0]; // Default to AUTO
+}
+
+} // anonymous namespace
+
 // --- Helper functions for logging ---
 static const char *mode_to_string(Mode mode) {
-  switch (mode) {
-    case Mode::AUTO: return "AUTO";
-    case Mode::COOLING: return "COOL";
-    case Mode::HEATING: return "HEAT";
-    default: return "AUTO";
-  }
+  return get_mode_info(mode).name;
 }
 
 static const char *fan_speed_to_string(FanSpeed fan) {
-  switch (fan) {
-    case FanSpeed::AUTO: return "AUTO";
-    case FanSpeed::MIN: return "LOW";
-    case FanSpeed::NIGHT: return "QUIET";
-    case FanSpeed::MAX: return "HIGH";
-    default: return "AUTO";
-  }
+  return get_fan_speed_info(fan).name;
 }
 
 static std::string presets_to_uppercase(const std::string &str) {
@@ -33,31 +67,15 @@ static std::string presets_to_uppercase(const std::string &str) {
 }
 
 // --- Centralized state mapping and publishing ---
-climate::ClimateMode OlimpiaBridgeClimate::mode_conversion() {
-  if (!this->on_) {
-    return climate::CLIMATE_MODE_OFF;
-  }
-  switch (this->mode_) {
-    case Mode::HEATING: return climate::CLIMATE_MODE_HEAT;
-    case Mode::COOLING: return climate::CLIMATE_MODE_COOL;
-    case Mode::AUTO:    return climate::CLIMATE_MODE_AUTO;
-    default:            return climate::CLIMATE_MODE_AUTO;
-  }
-}
-
-optional<climate::ClimateFanMode> OlimpiaBridgeClimate::fan_conversion() {
-  switch (this->fan_speed_) {
-    case FanSpeed::AUTO:  return climate::CLIMATE_FAN_AUTO;
-    case FanSpeed::MIN:   return climate::CLIMATE_FAN_LOW;
-    case FanSpeed::NIGHT: return climate::CLIMATE_FAN_QUIET;
-    case FanSpeed::MAX:   return climate::CLIMATE_FAN_HIGH;
-    default:              return climate::CLIMATE_FAN_AUTO;
-  }
-}
-
 void OlimpiaBridgeClimate::sync_and_publish() {
-  this->mode = this->mode_conversion();
-  this->fan_mode = this->fan_conversion();
+  if (this->on_) {
+    this->mode = get_mode_info(this->mode_).climate_mode;
+    this->fan_mode = get_fan_speed_info(this->fan_speed_).climate_fan_mode;
+  } else {
+    this->mode = climate::CLIMATE_MODE_OFF;
+    this->fan_mode = get_fan_speed_info(this->fan_speed_).climate_fan_mode; // Fan mode is still relevant when off
+  }
+  
   this->current_temperature = this->external_ambient_temperature_;
 
   if (this->custom_preset_ == "Auto" || this->custom_preset_ == "Manual") {
