@@ -378,9 +378,6 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     return;
   }
 
-  // Note: first_ha_ambient_received_ must stay false after fallback,
-  // so first HA value is bypassed (and logs accordingly), but then enables EMA.
-
   // Handle fallback and first-HA reception
   if (!this->has_received_external_temp_ && this->using_fallback_external_temp_) {
     ESP_LOGI(TAG, "[%s] Restoring last known ambient from FLASH: %.1f°C", this->get_name().c_str(), temp);
@@ -390,6 +387,15 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
     ESP_LOGI(TAG, "[%s] Fresh ambient received from HA: %.1f°C, enabling EMA!", this->get_name().c_str(), temp);
     this->first_ha_ambient_received_ = true;
     this->smoothed_ambient_ = NAN;  // Reset EMA
+
+    // Immediately apply the first HA value
+    this->external_ambient_temperature_ = temp;
+    this->current_temperature = temp;
+    this->has_received_external_temp_ = true;
+    this->external_temp_received_from_ha_ = true;
+    this->last_external_temp_update_ = now;
+    this->publish_state();
+    return;
   } else {
     // Smart EMA Reset if inactive too long
     if (now - this->last_external_temp_update_ > EMA_INACTIVITY_RESET_MS) {
