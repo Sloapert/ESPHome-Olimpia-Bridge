@@ -58,7 +58,6 @@ optional<climate::ClimateFanMode> OlimpiaBridgeClimate::fan_conversion() {
 void OlimpiaBridgeClimate::sync_and_publish() {
   this->mode = this->mode_conversion();
   this->fan_mode = this->fan_conversion();
-  this->target_temperature = this->target_temperature_;
   this->current_temperature = this->external_ambient_temperature_;
 
   if (this->custom_preset_ == "Auto" || this->custom_preset_ == "Manual") {
@@ -107,94 +106,25 @@ uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpe
 
 // --- Setup ---
 void OlimpiaBridgeClimate::setup() {
+  ESP_LOGCONFIG(TAG, "[%s] Setting up Olimpia Bridge Climate...", this->get_name().c_str());
   this->system_boot_time_ms_ = millis();
 
-  // Load fallback ambient temperature from flash
-  this->pref_ = global_preferences->make_preference<float>(this->get_object_id_hash() ^ 0x1030U);
-  this->saved_state_pref_ = global_preferences->make_preference<SavedState>(this->get_object_id_hash() ^ 0x2040U);
-
-  float fallback = NAN;
-  bool has_fallback = this->pref_.load(&fallback);
-  if (has_fallback) {
-    this->external_ambient_temperature_ = fallback;
-    this->smoothed_ambient_ = fallback;
+  // Initialize preferences storage
+  this->pref_ = global_preferences->make_preference<SavedState>(this->get_object_id_hash());
+  if (this->pref_.load(&this->state_)) {
+    ESP_LOGI(TAG, "[%s] Restored state from flash", this->get_name().c_str());
+    this->on_ = this->state_.on;
+    this->mode_ = this->state_.mode;
+    this->fan_speed_ = this->state_.fan_speed;
+    this->target_temperature = this->state_.target_temperature;
+    this->action = this->state_.last_action;
+    this->custom_preset_ = this->state_.custom_preset;
+    this->external_ambient_temperature_ = this->state_.last_ambient_temperature;
+    this->current_temperature = this->state_.last_ambient_temperature;
     this->using_fallback_external_temp_ = true;
-    ESP_LOGD(TAG, "[%s] Climate setup → fallback_used=true temp=%.2f°C", this->get_name().c_str(), fallback);
   } else {
-    ESP_LOGD(TAG, "[%s] Climate setup → fallback_used=false (no flash value)", this->get_name().c_str());
-  }
-
-  // Load or initialize climate state from flash
-  SavedState recovered;
-  bool found = this->saved_state_pref_.load(&recovered);
-  if (found) {
-    this->on_ = recovered.on;
-    this->mode_ = recovered.mode;
-    this->fan_speed_ = recovered.fan_speed;
-    this->target_temperature_ = recovered.target_temperature;
-    this->last_saved_state_ = recovered;
-    this->custom_preset_ = recovered.custom_preset;
-
-    ESP_LOGCONFIG(TAG, "[%s] Recovered state from flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
-             this->get_name().c_str(),
-             recovered.on ? "ON" : "OFF",
-             mode_to_string(static_cast<Mode>(recovered.mode)),
-             fan_speed_to_string(static_cast<FanSpeed>(recovered.fan_speed)),
-             presets_to_uppercase(recovered.custom_preset).c_str(),
-             recovered.target_temperature);
-  } else {
-    // First boot or flash reset: use defaults
-    this->on_ = false;
-    this->mode_ = Mode::AUTO;  // Represent OFF via on_=false + AUTO
-    this->fan_speed_ = FanSpeed::AUTO;
-    this->target_temperature_ = 22.0f;
-    this->custom_preset_ = "Auto";
-
-    ESP_LOGW(TAG, "[%s] No saved user state found, applying default: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
-             this->get_name().c_str(),
-             this->on_ ? "ON" : "OFF",
-             mode_to_string(this->mode_),
-             fan_speed_to_string(this->fan_speed_),
-             presets_to_uppercase(this->custom_preset_).c_str(),
-             this->target_temperature_);
-
-    SavedState default_state{
-      .on = this->on_,
-      .mode = this->mode_,
-      .fan_speed = this->fan_speed_,
-      .target_temperature = this->target_temperature_,
-    };
-    strncpy(default_state.custom_preset, this->custom_preset_.c_str(), sizeof(default_state.custom_preset) - 1);
-    default_state.custom_preset[sizeof(default_state.custom_preset) - 1] = '\0';
-    this->last_saved_state_ = default_state;
-    this->saved_state_pref_.save(&default_state);
-  }
-
-  // Sync state to Home Assistant UI and publish
-  this->sync_and_publish();
-
-  // Read reg103 (ambient temp) or push fallback to device
-  if (this->handler_ != nullptr) {
-    this->handler_->read_register(this->address_, 103, 1,
-      [this, has_fallback, fallback](bool success, const std::vector<uint16_t> &data) {
-        if (success && !data.empty()) {
-          float reg103 = data[0] * 0.1f;
-          this->external_ambient_temperature_ = reg103;
-          this->reg103_read_from_device_ = true;
-          ESP_LOGD(TAG, "[%s] Read 103 → external ambient temperature: %.2f°C", this->get_name().c_str(), reg103);
-          this->sync_and_publish();
-        } else if (has_fallback && !this->external_temp_received_from_ha_) {
-          uint16_t reg = static_cast<uint16_t>(fallback * 10);
-          this->handler_->write_register(this->address_, 103, reg,
-            [this, fallback](bool success, const std::vector<uint16_t> &) {
-              if (success) {
-                ESP_LOGCONFIG(TAG, "[%s] Pushed fallback external temp %.1f°C to register 103 on boot", this->get_name().c_str(), fallback);
-              } else {
-                ESP_LOGW(TAG, "[%s] Failed to write fallback external temp to register 103", this->get_name().c_str());
-              }
-            });
-        }
-      });
+    ESP_LOGI(TAG, "[%s] No saved state found, using defaults.", this->get_name().c_str());
+    this->target_temperature = 22.0f; // Restore default target temperature
   }
 
   // Read water temp from device
@@ -261,8 +191,8 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
 
   // Handle target temperature change
   if (call.get_target_temperature().has_value()) {
-    this->target_temperature_ = *call.get_target_temperature();
-    ESP_LOGI(TAG, "[%s] Target temperature set to %.1f°C", this->get_name().c_str(), this->target_temperature_);
+    this->target_temperature = *call.get_target_temperature();
+    ESP_LOGI(TAG, "[%s] Target temperature set to %.1f°C", this->get_name().c_str(), this->target_temperature);
     state_changed = true;
   }
 
@@ -302,86 +232,42 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
   }
 
   // Handle custom preset change
-  if (call.get_custom_preset().has_value()) {
-    std::string preset = *call.get_custom_preset();
-    if (preset == "Auto" || preset == "Manual") {
-      this->custom_preset_ = preset;
-      ESP_LOGI(TAG, "[%s] Virtual preset set to %s", this->get_name().c_str(), presets_to_uppercase(preset).c_str());
-      state_changed = true;
-    } else {
-      ESP_LOGW(TAG, "[%s] Unsupported virtual preset: %s", this->get_name().c_str(), presets_to_uppercase(preset).c_str());
-    }
+  if (this->presets_enabled_ && call.get_custom_preset().has_value()) {
+    this->custom_preset_ = *call.get_custom_preset();
+    state_changed = true;
   }
 
-  // If any setting changed, apply and persist
   if (state_changed) {
-    // 1. Optimistically update the UI state for instant feedback
-    this->sync_and_publish();
-
-    // 2. Persist the new state to flash
-    SavedState current{
-      .on = this->on_,
-      .mode = this->mode_,
-      .fan_speed = this->fan_speed_,
-      .target_temperature = this->target_temperature_,
-      .last_action = this->action,
-    };
-    strncpy(current.custom_preset, this->custom_preset_.c_str(), sizeof(current.custom_preset) - 1);
-    current.custom_preset[sizeof(current.custom_preset) - 1] = '\0';
-
-    if (memcmp(&this->last_saved_state_, &current, sizeof(SavedState)) != 0) {
-      this->last_saved_state_ = current;
-      if (this->saved_state_pref_.save(&current)) {
-        ESP_LOGD(TAG, "[%s] Updated user state saved to flash", this->get_name().c_str());
-      } else {
-        ESP_LOGW(TAG, "[%s] Failed to save state to flash", this->get_name().c_str());
-      }
-    }
-
-    // 3. Write to device and then read back valve status to confirm action
+    this->save_state_to_flash();
     this->write_control_registers_cycle([this]() {
       this->update_climate_action_from_valve_status();
     });
   }
 }
 
-// --- Read Register 1 (water temperature) ---
-void OlimpiaBridgeClimate::read_water_temperature() {
-  if (this->handler_ == nullptr || this->water_temp_sensor_ == nullptr) return;
+// --- Save State to Flash ---
+void OlimpiaBridgeClimate::save_state_to_flash() {
+  this->state_.on = this->on_;
+  this->state_.mode = this->mode_;
+  this->state_.fan_speed = this->fan_speed_;
+  this->state_.target_temperature = this->target_temperature;
+  this->state_.last_action = this->action;
+  strncpy(this->state_.custom_preset, this->custom_preset_.c_str(), sizeof(this->state_.custom_preset) - 1);
+  this->state_.last_ambient_temperature = this->external_ambient_temperature_;
 
-  this->handler_->read_register(this->address_, 1, 1, [this](bool success, const std::vector<uint16_t> &data) {
-    if (!success || data.empty()) {
-      ESP_LOGW(TAG, "[%s] Failed to read water temperature", this->get_name().c_str());
-      return;
-    }
-
-    float temp = data[0] * 0.1f;
-    ESP_LOGD(TAG, "[%s] Water temperature: %.1f°C", this->get_name().c_str(), temp);
-    this->water_temp_sensor_->publish_state(temp);
-  });
+  if (this->pref_.save(&this->state_)) {
+    ESP_LOGD(TAG, "[%s] Saved state to flash", this->get_name().c_str());
+  } else {
+    ESP_LOGW(TAG, "[%s] Failed to save state to flash", this->get_name().c_str());
+  }
 }
 
-// --- Unified Periodic Sync ---
-void OlimpiaBridgeClimate::periodic_sync() {
-  // This function is called periodically by loop() to keep the device state in sync.
-  
-  // 1. Perform the keep-alive write. This sends the current HA state to the device.
-  this->write_control_registers_cycle([this]() {
-    // 2. After writing, read back the full state to ensure everything is in sync.
-    // This reads registers 101, 102, and 9 (valve status).
-    this->restore_or_refresh_state();
-
-    // 3. Also refresh the optional water temperature sensor.
-    this->read_water_temperature();
-  });
-}
-
-// --- FSM Write Sequence: Reg 101 → 102 → 103 ---
+// --- Write Control Registers Cycle ---
 void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> callback) {
   if (this->handler_ == nullptr) return;
 
   uint16_t reg101 = this->get_status_register();
-  uint16_t reg102 = static_cast<uint16_t>(this->target_temperature_ * 10);
+  uint16_t reg102 = static_cast<uint16_t>(this->target_temperature * 10);
   uint16_t reg103 = std::isnan(this->external_ambient_temperature_) ? 0 : static_cast<uint16_t>(this->external_ambient_temperature_ * 10);
 
   ESP_LOGI(TAG, "[%s] Writing control → Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C | Ambient: %.1f°C",
@@ -390,7 +276,7 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
            mode_to_string(this->mode_),
            fan_speed_to_string(this->fan_speed_),
            presets_to_uppercase(this->custom_preset_).c_str(),
-           this->target_temperature_,
+           this->target_temperature,
            this->external_ambient_temperature_);
 
   this->handler_->write_register(this->address_, 101, reg101, [this, reg102, reg103, callback](bool ok1, const std::vector<uint16_t> &) {
@@ -430,7 +316,7 @@ void OlimpiaBridgeClimate::update_state_from_parsed(const ParsedState &parsed) {
   this->fan_speed_ = parsed.fan_speed;
 
   // Always restore the preset from flash, since the device does not store it
-  this->custom_preset_ = this->last_saved_state_.custom_preset;
+  this->custom_preset_ = this->state_.custom_preset;
 
   ESP_LOGD(TAG, "[%s] Updated state from reg101: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C | Ambient: %.1f°C",
            this->get_name().c_str(),
@@ -469,7 +355,7 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
       ESP_LOGD(TAG, "[%s] EMA disabled. Ambient set to: %.1f°C", this->get_name().c_str(), temp);
     }
     if (first_time || refresh_flash) {
-      this->external_temp_storage_.save(&temp);
+      this->save_state_to_flash();
       this->last_external_temp_flash_write_ = now;
     }
     return;
@@ -539,44 +425,39 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   this->has_received_external_temp_ = true;
   this->external_temp_received_from_ha_ = true;
   this->last_external_temp_update_ = now;
+}
 
-  if ((first_time || this->using_fallback_external_temp_ || refresh_flash) && temp_changed) {
-    this->pref_.save(&temp);
-    this->last_external_temp_flash_write_ = now;
-    this->using_fallback_external_temp_ = false;
+// --- Read Water Temperature ---
+void OlimpiaBridgeClimate::read_water_temperature() {
+  if (this->water_temp_sensor_ == nullptr) {
+    return;
   }
-
-  this->sync_and_publish();
+  if (this->handler_ == nullptr) {
+    ESP_LOGW(TAG, "[%s] Modbus handler not available, cannot read water temperature.", this->get_name().c_str());
+    return;
+  }
+  this->handler_->read_register(this->address_, 1, 1, [this](bool success, const std::vector<uint16_t> &data) {
+    if (!success || data.empty()) {
+      ESP_LOGW(TAG, "[%s] Failed to read register 1 (water temperature)", this->get_name().c_str());
+      return;
+    }
+    float temp = data[0] / 10.0f;
+    ESP_LOGD(TAG, "[%s] Read water temperature: %.1f°C", this->get_name().c_str(), temp);
+    this->water_temp_sensor_->publish_state(temp);
+  });
 }
 
 // --- Restore Saved State from Flash ---
 void OlimpiaBridgeClimate::apply_last_known_state() {
-  SavedState recovered{};
-  if (this->saved_state_pref_.load(&recovered)) {
-    this->last_saved_state_ = recovered;
-    ESP_LOGI(TAG, "[%s] Recovered state from flash: Power: %s | Mode: %s | Fan: %s | Preset: %s | Target: %.1f°C",
-         this->get_name().c_str(),
-         recovered.on ? "ON" : "OFF",
-         mode_to_string(static_cast<Mode>(recovered.mode)),
-         fan_speed_to_string(static_cast<FanSpeed>(recovered.fan_speed)),
-         presets_to_uppercase(recovered.custom_preset).c_str(),
-         recovered.target_temperature);
-  } else {
-    ESP_LOGW(TAG, "[%s] No saved state found in flash, skipping recovery", this->get_name().c_str());
-    return;
-  }
-
-  this->on_ = recovered.on;
-  this->mode_ = recovered.mode;
-  this->fan_speed_ = recovered.fan_speed;
-  this->target_temperature_ = recovered.target_temperature;
-  this->action = recovered.last_action;
-  this->custom_preset_ = recovered.custom_preset;
-
-  this->sync_and_publish();
+  this->on_ = this->state_.on;
+  this->mode_ = this->state_.mode;
+  this->fan_speed_ = this->state_.fan_speed;
+  this->target_temperature = this->state_.target_temperature;
+  this->custom_preset_ = this->state_.custom_preset;
+  ESP_LOGI(TAG, "[%s] Applying last known state from flash", this->get_name().c_str());
 }
 
-// --- Boot State Recovery or Manual Refresh ---
+// --- Boot/Recovery State Restoration ---
 void OlimpiaBridgeClimate::restore_or_refresh_state() {
   if (this->handler_ == nullptr) return;
 
@@ -632,13 +513,12 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
           }
 
           // Set recovered target temperature
-          this->target_temperature_ = target;
           this->target_temperature = target;
           this->update_state_from_parsed(parsed);  // Update internal + publish to HA
 
           ESP_LOGD(TAG, "[%s] Updated state → ON=%d MODE=%d FAN=%d target=%.1f°C",
                    this->get_name().c_str(), this->on_, static_cast<int>(this->mode_),
-                   static_cast<int>(this->fan_speed_), this->target_temperature_);
+                   static_cast<int>(this->fan_speed_), this->target_temperature);
 
           if (is_boot_cycle) {
             this->component_state_ = ComponentState::RUNNING;
@@ -721,6 +601,21 @@ void OlimpiaBridgeClimate::loop() {
     this->next_status_poll_ms_ = now + PERIODIC_SYNC_INTERVAL_MS + random(0, PERIODIC_SYNC_JITTER_MS);  // 60s + jitter
     this->periodic_sync();
   }
+}
+
+// --- Periodic Sync ---
+void OlimpiaBridgeClimate::periodic_sync() {
+  ESP_LOGD(TAG, "[%s] Starting periodic sync...", this->get_name().c_str());
+
+  // Periodically re-write the control registers to act as a keep-alive
+  // and ensure the HA state is enforced on the device.
+  this->write_control_registers_cycle([this]() {
+    // After re-asserting the state, check the valve status to update the action.
+    this->update_climate_action_from_valve_status();
+  });
+
+  // Also, refresh the water temperature reading periodically.
+  this->read_water_temperature();
 }
 
 }  // namespace olimpia_bridge

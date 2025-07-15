@@ -56,6 +56,7 @@ struct SavedState {
   float target_temperature;
   climate::ClimateAction last_action;
   char custom_preset[16];  // Fixed-size array for custom preset
+  float last_ambient_temperature; // Add ambient temp to persisted state
 };
 
 // --- Utility to decode register 101 ---
@@ -127,6 +128,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   // Internal state updates
   void update_state_from_parsed(const ParsedState &parsed);
   uint16_t get_status_register();
+  void save_state_to_flash();
 
   // Modbus configuration
   uint8_t address_;
@@ -136,7 +138,6 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   sensor::Sensor *water_temp_sensor_{nullptr};
 
   // Climate state
-  float target_temperature_{22.0f};
   float current_temperature_{NAN};
   float external_ambient_temperature_{NAN};
   float smoothed_ambient_{NAN};
@@ -153,8 +154,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // Persistence
   ESPPreferenceObject pref_;
-  ESPPreferenceObject saved_state_pref_;
-  SavedState last_saved_state_{};
+  SavedState state_{};
 
   // Custom virtual presets
   std::string custom_preset_{"Auto"};
@@ -164,7 +164,6 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   bool disable_mode_auto_ = false;
 
   // External Temperature Management
-  ESPPreferenceObject external_temp_storage_;
   bool using_fallback_external_temp_{false};
   bool has_received_external_temp_{false};
   bool external_temp_received_from_ha_{false};
