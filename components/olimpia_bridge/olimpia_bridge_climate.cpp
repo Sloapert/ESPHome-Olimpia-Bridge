@@ -460,6 +460,21 @@ void OlimpiaBridgeClimate::set_external_ambient_temperature(float temp) {
   bool refresh_flash = (now - this->last_external_temp_flash_write_ > EXTERNAL_TEMP_FLASH_WRITE_INTERVAL_MS);
   bool temp_changed = std::abs(temp - this->external_ambient_temperature_) > 0.05f;
 
+  // If EMA is disabled, bypass all logic and just update the temperature
+  if (!this->use_ema_) {
+    if (temp_changed) {
+      this->external_ambient_temperature_ = temp;
+      this->current_temperature = temp;
+      this->publish_state();
+      ESP_LOGD(TAG, "[%s] EMA disabled. Ambient set to: %.1f°C", this->get_name().c_str(), temp);
+    }
+    if (first_time || refresh_flash) {
+      this->external_temp_storage_.save(&temp);
+      this->last_external_temp_flash_write_ = now;
+    }
+    return;
+  }
+
   // Note: first_ha_ambient_received_ must stay false after fallback,
   // so first HA value is bypassed (and logs accordingly), but then enables EMA.
 

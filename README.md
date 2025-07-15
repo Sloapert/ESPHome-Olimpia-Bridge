@@ -16,6 +16,7 @@ This ESPHome version replicates the same communication behavior, supports multip
 - Communication behavior and timing comply with official Olimpia Splendid specifications & recommendations
 - Full **climate control** (mode, fan speed, target temperature) with state action
 - **External ambient temperature** injection (via Home Assistant) with RAM and EEPROM fallback
+- **Exponential Moving Average (EMA)** filtering for smooth and reliable temperature sensing.
 - Persistent storage of climate state in flash memory with **Powerloss detection & recovery**
 - **Robust boot fallback detection and self-healing**
 - Optional **water temperature sensor** per unit
@@ -90,7 +91,7 @@ This ESPHome version replicates the same communication behavior, supports multip
      ```yaml
      id(<unit>).set_external_ambient_temperature(x);
      ```
-   - Values are smoothed using an **EMA filter** (`ema_alpha`, default `0.2`) with trend confirmation to reject noise.
+   - Values are smoothed using an **EMA filter** (`ema_alpha`, default `0.2`) with trend confirmation to reject noise. This can be disabled globally by setting `use_ema: false`.
    - EEPROM save logic prevents flash wear and stores a backup value:
      - On first valid HA update,
      - If temp changes significantly after 1h,
@@ -135,6 +136,7 @@ olimpia_bridge:
   error_ratio_sensor:
     name: Modbus Error Ratio
     unit_of_measurement: "%"
+  use_ema: true # Optional: global flag to enable/disable EMA filtering (default: true)
   climates:
     - id: living_room
       name: Living Room Fancoil

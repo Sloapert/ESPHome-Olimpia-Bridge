@@ -100,6 +100,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_water_temp_sensor(sensor::Sensor *sensor) { this->water_temp_sensor_ = sensor; }
   void set_external_ambient_temperature(float temp);
   void set_ambient_ema_alpha(float alpha) { this->ambient_ema_alpha_ = alpha; }
+  void set_use_ema(bool use_ema) { this->use_ema_ = use_ema; }
   void set_min_temperature(float min_temp) { this->min_temperature_ = min_temp; }
   void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
   void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }
@@ -140,6 +141,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   float external_ambient_temperature_{NAN};
   float smoothed_ambient_{NAN};
   float ambient_ema_alpha_{0.2f};
+  bool use_ema_{true};
   bool first_ha_ambient_received_{false};
   uint32_t last_external_temp_update_{0};
 
@@ -162,6 +164,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   bool disable_mode_auto_ = false;
 
   // External Temperature Management
+  ESPPreferenceObject external_temp_storage_;
   bool using_fallback_external_temp_{false};
   bool has_received_external_temp_{false};
   bool external_temp_received_from_ha_{false};

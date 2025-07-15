@@ -19,6 +19,7 @@ CONF_MAX_TEMPERATURE = "max_temperature"
 CONF_TARGET_TEMPERATURE_STEP = "target_temperature_step"
 CONF_PRESETS_ENABLED = "presets"
 CONF_DISABLE_MODE_AUTO = "disable_mode_auto"
+CONF_USE_EMA = "use_ema"
 
 # --- Define C++ class bindings ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
@@ -55,6 +56,7 @@ CONFIG_SCHEMA = cv.Schema({
         unit_of_measurement="%",
     ),
     cv.Required(CONF_CLIMATES): cv.ensure_list(olimpia_bridge_climate_schema),
+    cv.Optional(CONF_USE_EMA, default=True): cv.boolean,
 }).extend(cv.COMPONENT_SCHEMA)
 
 # --- Code generation logic ---
@@ -87,6 +89,7 @@ async def to_code(config):
         cg.add(climate_var.set_handler(handler))
         cg.add(controller.add_climate(climate_var))
         cg.add(climate_var.set_ambient_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
+        cg.add(climate_var.set_use_ema(config[CONF_USE_EMA]))
 
         # Set temperature traits
         cg.add(climate_var.set_min_temperature(climate_conf[CONF_MIN_TEMPERATURE]))
