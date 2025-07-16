@@ -35,11 +35,31 @@ struct ModbusRequest {
 // --- Modbus ASCII Handler Class ---
 class ModbusAsciiHandler : public esphome::Component {
  public:
+  ModbusAsciiHandler() = default;
+
   // Hardware Configuration
-  void set_uart(uart::UARTComponent *uart) { this->uart_ = uart; }
-  void set_re_pin(GPIOPin *pin) { this->re_pin_ = pin; }
-  void set_de_pin(GPIOPin *pin) { this->de_pin_ = pin; }
+  void set_uart(uart::UARTComponent *uart) { 
+    this->uart_ = uart;
+    this->check_config_();
+  }
+  
+  void set_re_pin(GPIOPin *pin) { 
+    this->re_pin_ = pin;
+    this->check_config_();
+  }
+  
+  void set_de_pin(GPIOPin *pin) { 
+    this->de_pin_ = pin;
+    this->check_config_();
+  }
+
+  bool is_ready() const { 
+    return this->uart_ != nullptr && this->re_pin_ != nullptr && this->de_pin_ != nullptr; 
+  }
+
   void set_direction(bool transmit);  // true = TX, false = RX
+
+  void setup() override;
 
   // Public Modbus API
   void add_request(ModbusRequest request);
@@ -55,6 +75,9 @@ class ModbusAsciiHandler : public esphome::Component {
   float get_error_ratio() const;
 
  protected:
+  // Configuration check
+  void check_config_();
+
   // ASCII Frame Encoding/Decoding
   std::string encode_ascii_frame(const std::vector<uint8_t> &data);
   bool decode_ascii_frame(const std::string &frame, std::vector<uint8_t> &data);

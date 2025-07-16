@@ -6,6 +6,34 @@ namespace olimpia_bridge {
 
 static const char *const TAG = "modbus_ascii";
 
+void ModbusAsciiHandler::check_config_() {
+  if (this->is_ready()) {
+    ESP_LOGCONFIG(TAG, "[Modbus] ModbusAsciiHandler configuration complete");
+  }
+}
+
+// --- Component Setup ---
+void ModbusAsciiHandler::setup() {
+  if (this->uart_ == nullptr) {
+    ESP_LOGE(TAG, "[Modbus] No UART configured for ModbusAsciiHandler");
+    this->mark_failed();
+    return;
+  }
+
+  // Initialize RE/DE direction control pins
+  if (this->re_pin_ != nullptr && this->de_pin_ != nullptr) {
+    this->re_pin_->setup();
+    this->de_pin_->setup();
+    this->re_pin_->digital_write(false);  // RX mode
+    this->de_pin_->digital_write(false);  // RX mode
+    ESP_LOGCONFIG(TAG, "[Modbus] RS-485 direction control pins initialized");
+  } else {
+    ESP_LOGE(TAG, "[Modbus] No RE/DE pair configured for RS-485 direction control");
+    this->mark_failed();
+    return;
+  }
+}
+
 // --- Direction control ---
 void ModbusAsciiHandler::set_direction(bool transmit) {
   if (this->re_pin_ != nullptr)
@@ -19,7 +47,7 @@ uint8_t ModbusAsciiHandler::compute_lrc(const std::vector<uint8_t> &data) {
   uint8_t sum = 0;
   for (uint8_t b : data)
     sum += b;
-  return static_cast<uint8_t>(-sum);  // Two's complement
+  return static_cast<uint8_t>(-sum);
 }
 
 // --- Error Ratio ---

@@ -23,9 +23,9 @@ CONF_USE_EMA = "use_ema"
 
 # --- Define C++ class bindings ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
-OlimpiaBridge = olimpia_bridge_ns.class_("OlimpiaBridge", cg.Component, uart.UARTDevice)
+OlimpiaBridge = olimpia_bridge_ns.class_("OlimpiaBridge", cg.Component)
 OlimpiaBridgeClimate = olimpia_bridge_ns.class_("OlimpiaBridgeClimate", climate.Climate, cg.Component)
-ModbusAsciiHandler = olimpia_bridge_ns.class_("ModbusAsciiHandler")
+ModbusAsciiHandler = olimpia_bridge_ns.class_("ModbusAsciiHandler", cg.Component)
 
 # --- Per-climate configuration schema ---
 olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).extend({
@@ -61,23 +61,23 @@ CONFIG_SCHEMA = cv.Schema({
 
 # --- Code generation logic ---
 async def to_code(config):
-    # Instantiate OlimpiaBridge controller
-    controller = cg.new_Pvariable(config[CONF_ID])
-    await cg.register_component(controller, config)
+    # First create and configure the Modbus handler
+    handler = cg.new_Pvariable(config[CONF_HANDLER_ID])
+    await cg.register_component(handler, config)
 
-    # Bind UART to OlimpiaBridge
+    # Configure hardware on handler
     uart_var = await cg.get_variable(config[CONF_UART_ID])
-    cg.add(controller.set_uart_parent(uart_var))
-
-    # Configure RE/DE GPIO pins
     re_pin = await cg.gpio_pin_expression(config["re_pin"])
     de_pin = await cg.gpio_pin_expression(config["de_pin"])
-    cg.add(controller.set_re_pin(re_pin))
-    cg.add(controller.set_de_pin(de_pin))
 
-    # Create and assign ModbusAsciiHandler
-    handler = cg.new_Pvariable(config[CONF_HANDLER_ID])
-    cg.add(controller.set_handler(handler))
+    cg.add(handler.set_uart(uart_var))
+    cg.add(handler.set_re_pin(re_pin))
+    cg.add(handler.set_de_pin(de_pin))
+
+    # Create bridge with pre-configured handler
+    bridge = cg.new_Pvariable(config[CONF_ID])
+    await cg.register_component(bridge, config)
+    cg.add(bridge.set_handler(handler))
 
     # Process each climate entity in configuration
     for climate_conf in config[CONF_CLIMATES]:
@@ -87,7 +87,7 @@ async def to_code(config):
 
         cg.add(climate_var.set_address(climate_conf[CONF_ADDRESS]))
         cg.add(climate_var.set_handler(handler))
-        cg.add(controller.add_climate(climate_var))
+        cg.add(bridge.add_climate(climate_var))
         cg.add(climate_var.set_ambient_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
         cg.add(climate_var.set_use_ema(config[CONF_USE_EMA]))
 
@@ -101,11 +101,7 @@ async def to_code(config):
             sens = await sensor.new_sensor(climate_conf[CONF_WATER_TEMPERATURE_SENSOR])
             cg.add(climate_var.set_water_temp_sensor(sens))
 
-        # Set presets_enabled flag
-        cg.add(climate_var.set_presets_enabled(climate_conf[CONF_PRESETS_ENABLED]))
-        # Set disable_mode_auto flag
-        cg.add(climate_var.set_disable_mode_auto(climate_conf[CONF_DISABLE_MODE_AUTO]))
-
-    # Mandatory error ratio sensor
-    error_ratio_sensor = await sensor.new_sensor(config["error_ratio_sensor"])
-    cg.add(controller.set_error_ratio_sensor(error_ratio_sensor))
+    # Configure error ratio sensor if present
+    if "error_ratio_sensor" in config:
+        error_sensor = await sensor.new_sensor(config["error_ratio_sensor"])
+        cg.add(bridge.set_error_ratio_sensor(error_sensor))

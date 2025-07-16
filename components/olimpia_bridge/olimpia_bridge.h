@@ -26,24 +26,15 @@ class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {
   void add_climate(OlimpiaBridgeClimate *climate);
   std::vector<OlimpiaBridgeClimate *> climates_;
 
-  // Hardware configuration
-  void set_uart_parent(uart::UARTComponent *parent) { this->uart_ = parent; }
-
-  void set_re_pin(GPIOPin *pin) {
-    this->re_pin_ = pin;
-    if (this->handler_ != nullptr)
-      this->handler_->set_re_pin(pin);
+  // Set a pre-configured handler
+  void set_handler(ModbusAsciiHandler *handler) { 
+    this->handler_ = handler;
   }
-
-  void set_de_pin(GPIOPin *pin) {
-    this->de_pin_ = pin;
-    if (this->handler_ != nullptr)
-      this->handler_->set_de_pin(pin);
-  }
-
-  void set_handler(ModbusAsciiHandler *handler) { this->handler_ = handler; }
 
   void set_error_ratio_sensor(sensor::Sensor *sensor) { this->error_ratio_sensor_ = sensor; }
+
+  // Moved implementation to cpp file
+  bool validate_handler() const;
 
   // Home Assistant service methods
   void read_register(int address, int reg);
@@ -51,11 +42,6 @@ class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {
   void dump_configuration(int address);
 
  protected:
-  // Hardware references
-  uart::UARTComponent *uart_{nullptr};
-  GPIOPin *re_pin_{nullptr};
-  GPIOPin *de_pin_{nullptr};
-
   // Modbus handler
   ModbusAsciiHandler *handler_{nullptr};
 
