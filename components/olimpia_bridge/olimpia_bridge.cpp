@@ -34,12 +34,6 @@ void OlimpiaBridge::setup() {
   // Register handler as a component so loop() is called
   App.register_component(this->handler_);
   ESP_LOGCONFIG(TAG, "ModbusAsciiHandler initialized and registered");
-
-  // Register custom Home Assistant services
-  this->register_service(&OlimpiaBridge::read_register, "read_register", {"address", "register"});
-  this->register_service(&OlimpiaBridge::write_register, "write_register", {"address", "register", "value"});
-  this->register_service(&OlimpiaBridge::dump_configuration, "dump_config", {"address"});
-
   ESP_LOGCONFIG(TAG, "OlimpiaBridge setup complete");
 }
 

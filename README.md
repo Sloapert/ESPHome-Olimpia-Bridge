@@ -107,6 +107,15 @@ external_components:
 ## ⚙️ Example Configuration
 
 ```yaml
+esphome:
+  name: "${hostname}"
+  comment: "Olimpia Splendid Bridge"
+  devices:
+    - id: olimpia_living
+      name: "Living Room Unit"
+    - id: olimpia_bedroom
+      name: "Bedroom Unit"
+
 uart:
   id: modbus_uart
   tx_pin:
@@ -130,12 +139,14 @@ olimpia_bridge:
     unit_of_measurement: "%"
   use_ema: false  # Optional: enable/disable EMA filtering (default: true)
   climates:
-    - id: living_room
-      name: Living Room Fancoil
+    - name: Living Room Unit
+      id: living_room
+      device_id: olimpia_living
       address: 1  # Modbus address
       ema_alpha: 0.25  # Optional: EMA smoothing factor for ambient temp (default: 0.2)
       water_temperature_sensor:  # Optional: sensor for water temp
         name: Living Room Water Temperature
+        device_id: olimpia_living
         unit_of_measurement: "°C"
         accuracy_decimals: 1
         device_class: temperature
@@ -143,12 +154,20 @@ olimpia_bridge:
       presets_enabled: true  # Optional: exposes virtual presets to HA (default: false)
       disable_mode_auto: true  # Optional: hide AUTO mode from HA (default: false)
 
-    - id: bedroom
-      name: Bedroom Unit
+    - name: Bedroom Unit
+      id: bedroom
+      device_id: olimpia_bedroom
       address: 2
       ema_alpha: 0.1  # More smoothing
       presets_enabled: false
       disable_mode_auto: false
+      water_temperature_sensor:  # Optional: sensor for water temp
+        name: Bedroom Water Temperature
+        device_id: olimpia_bedroom
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        device_class: temperature
+        state_class: measurement
 
 sensor:
   - platform: homeassistant

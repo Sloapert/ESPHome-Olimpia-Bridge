@@ -14,7 +14,7 @@ namespace olimpia_bridge {
 class OlimpiaBridgeClimate;  // Forward declaration
 
 // --- OlimpiaBridge Component ---
-class OlimpiaBridge : public PollingComponent, public api::CustomAPIDevice {
+class OlimpiaBridge : public PollingComponent {
  public:
   OlimpiaBridge() : PollingComponent(60000) {}  // 60s polling interval
 

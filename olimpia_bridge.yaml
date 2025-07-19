@@ -12,6 +12,15 @@ esp32:
     type: arduino
     version: recommended
 
+esphome:
+  name: "${hostname}"
+  comment: "Olimpia Splendid Bridge"
+  devices:
+    - id: olimpia_living
+      name: "Fancoil Living"
+    - id: olimpia_office
+      name: "Fancoil Office"
+
 preferences:
   flash_write_interval: 0s
 
@@ -36,14 +45,18 @@ olimpia_bridge:
   climates:
     - name: "Fancoil Living"
       id: fancoil_living
+      device_id: olimpia_living
       address: 1
       water_temperature_sensor:
         name: "Living Water Temp Sensor"
+        device_id: olimpia_living
     - name: "Fancoil Office"
       id: fancoil_office
+      device_id: olimpia_office
       address: 2
       water_temperature_sensor:
         name: "Office Water Temp Sensor"
+        device_id: olimpia_office
 
 sensor:
  - platform: homeassistant
