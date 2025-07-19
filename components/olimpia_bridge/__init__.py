@@ -35,7 +35,7 @@ olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).ext
     cv.Optional(CONF_EMA_ALPHA, default=0.2): cv.float_,
     cv.Optional(CONF_WATER_TEMPERATURE_SENSOR): sensor.sensor_schema(
         unit_of_measurement="°C",
-        accuracy_decimals=1,
+        accuracy_decimals=0,
         device_class="temperature",
         state_class="measurement",
     ),

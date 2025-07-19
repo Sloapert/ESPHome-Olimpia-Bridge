@@ -116,6 +116,30 @@ esphome:
     - id: olimpia_bedroom
       name: "Bedroom Unit"
 
+api:
+  services:
+    - service: read_register
+      variables:
+        address: int
+        reg: int
+      then:
+        - lambda: |-
+            id(modbus_ascii_bridge).read_register(address, reg);
+    - service: write_register
+      variables:
+        address: int
+        reg: int
+        value: int
+      then:
+        - lambda: |-
+            id(modbus_ascii_bridge).write_register(address, reg, value);
+    - service: dump_configuration
+      variables:
+        address: int
+      then:
+        - lambda: |-
+            id(modbus_ascii_bridge).dump_configuration(address);
+
 uart:
   id: modbus_uart
   tx_pin:
@@ -136,7 +160,6 @@ olimpia_bridge:
   de_pin: GPIO33  # DE (Driver Enable)
   error_ratio_sensor:
     name: Modbus Error Ratio
-    unit_of_measurement: "%"
   use_ema: false  # Optional: enable/disable EMA filtering (default: true)
   climates:
     - name: Living Room Unit
@@ -147,10 +170,9 @@ olimpia_bridge:
       water_temperature_sensor:  # Optional: sensor for water temp
         name: Living Room Water Temperature
         device_id: olimpia_living
-        unit_of_measurement: "°C"
-        accuracy_decimals: 1
-        device_class: temperature
-        state_class: measurement
+      device_error_ratio_sensor:  # Optional: per-device error ratio sensor
+        name: Living Room Error Ratio
+        device_id: olimpia_living
       presets_enabled: true  # Optional: exposes virtual presets to HA (default: false)
       disable_mode_auto: true  # Optional: hide AUTO mode from HA (default: false)
 
@@ -159,15 +181,14 @@ olimpia_bridge:
       device_id: olimpia_bedroom
       address: 2
       ema_alpha: 0.1  # More smoothing
-      presets_enabled: false
-      disable_mode_auto: false
       water_temperature_sensor:  # Optional: sensor for water temp
         name: Bedroom Water Temperature
         device_id: olimpia_bedroom
-        unit_of_measurement: "°C"
-        accuracy_decimals: 1
-        device_class: temperature
-        state_class: measurement
+      device_error_ratio_sensor:  # Optional: per-device error ratio sensor
+        name: Bedroom Error Ratio
+        device_id: olimpia_bedroom
+      presets_enabled: false
+      disable_mode_auto: false
 
 sensor:
   - platform: homeassistant
