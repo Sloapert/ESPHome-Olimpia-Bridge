@@ -99,6 +99,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_address(uint8_t address) { this->address_ = address; }
   void set_handler(ModbusAsciiHandler *handler) { this->handler_ = handler; }
   void set_water_temp_sensor(sensor::Sensor *sensor) { this->water_temp_sensor_ = sensor; }
+  void set_error_ratio_sensor(sensor::Sensor *sensor) { this->device_error_ratio_sensor_ = sensor; }
   void set_external_ambient_temperature(float temp);
   void set_ambient_ema_alpha(float alpha) { this->ambient_ema_alpha_ = alpha; }
   void set_use_ema(bool use_ema) { this->use_ema_ = use_ema; }
@@ -134,6 +135,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
 
   // Sensors
   sensor::Sensor *water_temp_sensor_{nullptr};
+  sensor::Sensor *device_error_ratio_sensor_{nullptr};
 
   // Climate state
   float current_temperature_{NAN};
@@ -172,6 +174,10 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   uint32_t system_boot_time_ms_{0};
   uint32_t next_status_poll_ms_{0};
   uint32_t next_recovery_attempt_ms_{0};
+
+  // Per-device Modbus request tracking
+  uint32_t device_total_requests_{0};
+  uint32_t device_failed_requests_{0};
 
   // Temperature limits and steps
   float min_temperature_{15.0f};

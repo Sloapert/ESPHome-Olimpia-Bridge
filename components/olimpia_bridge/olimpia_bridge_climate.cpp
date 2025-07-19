@@ -298,19 +298,25 @@ void OlimpiaBridgeClimate::write_control_registers_cycle(std::function<void()> c
            this->external_ambient_temperature_);
 
   this->handler_->write_register(this->address_, 101, reg101, [this, reg102, reg103, callback](bool ok1, const std::vector<uint16_t> &) {
+    this->device_total_requests_++;
     if (!ok1) {
+      this->device_failed_requests_++;
       ESP_LOGW(TAG, "[%s] Failed to write register 101", this->get_name().c_str());
       return;
     }
 
     this->handler_->write_register(this->address_, 102, reg102, [this, reg103, callback](bool ok2, const std::vector<uint16_t> &) {
+      this->device_total_requests_++;
       if (!ok2) {
+        this->device_failed_requests_++;
         ESP_LOGW(TAG, "[%s] Failed to write register 102", this->get_name().c_str());
         return;
       }
 
       this->handler_->write_register(this->address_, 103, reg103, [this, callback](bool ok3, const std::vector<uint16_t> &) {
+        this->device_total_requests_++;
         if (!ok3) {
+          this->device_failed_requests_++;
           ESP_LOGW(TAG, "[%s] Failed to write register 103", this->get_name().c_str());
           return;
         }
@@ -460,7 +466,9 @@ void OlimpiaBridgeClimate::read_water_temperature() {
     return;
   }
   this->handler_->read_register(this->address_, 1, 1, [this](bool success, const std::vector<uint16_t> &data) {
+    this->device_total_requests_++;
     if (!success || data.empty()) {
+      this->device_failed_requests_++;
       ESP_LOGW(TAG, "[%s] Failed to read register 1 (water temperature)", this->get_name().c_str());
       return;
     }
@@ -500,7 +508,9 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
 
   this->handler_->read_register(this->address_, 101, 1,
     [this, is_boot_cycle](bool ok101, const std::vector<uint16_t> &data101) {
+      this->device_total_requests_++;
       if (!ok101 || data101.empty()) {
+        this->device_failed_requests_++;
         ESP_LOGW(TAG, "[%s] Failed to read register 101", this->get_name().c_str());
         if (is_boot_cycle) this->component_state_ = ComponentState::BOOTING; // Allow retry
         return;
@@ -514,7 +524,9 @@ void OlimpiaBridgeClimate::restore_or_refresh_state() {
 
       this->handler_->read_register(this->address_, 102, 1,
         [this, parsed, is_boot_cycle](bool ok102, const std::vector<uint16_t> &data102) {
+          this->device_total_requests_++;
           if (!ok102 || data102.empty()) {
+            this->device_failed_requests_++;
             ESP_LOGW(TAG, "[%s] Failed to read register 102", this->get_name().c_str());
             if (is_boot_cycle) this->component_state_ = ComponentState::BOOTING; // Allow retry
             return;
@@ -626,6 +638,12 @@ void OlimpiaBridgeClimate::loop() {
   if (this->component_state_ == ComponentState::RUNNING && now >= this->next_status_poll_ms_) {
     this->next_status_poll_ms_ = now + PERIODIC_SYNC_INTERVAL_MS + random(0, PERIODIC_SYNC_JITTER_MS);  // 60s + jitter
     this->periodic_sync();
+  }
+
+  // Per-device error ratio sensor update
+  if (this->device_error_ratio_sensor_ && this->device_total_requests_ > 0) {
+    float error_ratio = (100.0f * this->device_failed_requests_) / this->device_total_requests_;
+    this->device_error_ratio_sensor_->publish_state(static_cast<int>(error_ratio + 0.5f));
   }
 }
 

@@ -20,6 +20,7 @@ CONF_TARGET_TEMPERATURE_STEP = "target_temperature_step"
 CONF_PRESETS_ENABLED = "presets"
 CONF_DISABLE_MODE_AUTO = "disable_mode_auto"
 CONF_USE_EMA = "use_ema"
+CONF_DEVICE_ERROR_RATIO_SENSOR = "device_error_ratio_sensor"
 
 # --- Define C++ class bindings ---
 olimpia_bridge_ns = cg.esphome_ns.namespace("olimpia_bridge")
@@ -43,6 +44,10 @@ olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).ext
     cv.Optional(CONF_TARGET_TEMPERATURE_STEP, default=0.5): cv.float_,
     cv.Optional(CONF_PRESETS_ENABLED, default=False): cv.boolean,
     cv.Optional(CONF_DISABLE_MODE_AUTO, default=False): cv.boolean,
+    cv.Optional(CONF_DEVICE_ERROR_RATIO_SENSOR): sensor.sensor_schema(
+        unit_of_measurement="%",
+        entity_category="diagnostic",
+    ),
 })
 
 # --- Top-level configuration schema ---
@@ -54,6 +59,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Required("de_pin"): pins.gpio_output_pin_schema,
     cv.Required("error_ratio_sensor"): sensor.sensor_schema(
         unit_of_measurement="%",
+        entity_category="diagnostic",
     ),
     cv.Required(CONF_CLIMATES): cv.ensure_list(olimpia_bridge_climate_schema),
     cv.Optional(CONF_USE_EMA, default=True): cv.boolean,
@@ -100,6 +106,11 @@ async def to_code(config):
         if CONF_WATER_TEMPERATURE_SENSOR in climate_conf:
             sens = await sensor.new_sensor(climate_conf[CONF_WATER_TEMPERATURE_SENSOR])
             cg.add(climate_var.set_water_temp_sensor(sens))
+
+        # Optional per-climate error ratio sensor (now named device_error_ratio_sensor)
+        if CONF_DEVICE_ERROR_RATIO_SENSOR in climate_conf:
+            device_error_sensor = await sensor.new_sensor(climate_conf[CONF_DEVICE_ERROR_RATIO_SENSOR])
+            cg.add(climate_var.set_error_ratio_sensor(device_error_sensor))
 
     # Configure error ratio sensor if present
     if "error_ratio_sensor" in config:
