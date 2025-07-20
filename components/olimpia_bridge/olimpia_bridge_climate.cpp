@@ -172,12 +172,15 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
   }
   traits.set_supported_modes(supported_modes);
 
-  traits.set_supported_fan_modes({
+  std::set<climate::ClimateFanMode> supported_fan_modes = {
     climate::CLIMATE_FAN_AUTO,
     climate::CLIMATE_FAN_LOW,
-    climate::CLIMATE_FAN_QUIET,
-    climate::CLIMATE_FAN_HIGH,
-  });
+    climate::CLIMATE_FAN_HIGH
+  };
+  if (!this->disable_fan_quiet_) {
+    supported_fan_modes.insert(climate::CLIMATE_FAN_QUIET);
+  }
+  traits.set_supported_fan_modes(supported_fan_modes);
   traits.set_visual_current_temperature_step(0.1);
   traits.set_visual_target_temperature_step(this->target_temperature_step_);
 

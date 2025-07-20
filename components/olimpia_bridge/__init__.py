@@ -19,6 +19,7 @@ CONF_MAX_TEMPERATURE = "max_temperature"
 CONF_TARGET_TEMPERATURE_STEP = "target_temperature_step"
 CONF_PRESETS_ENABLED = "presets"
 CONF_DISABLE_MODE_AUTO = "disable_mode_auto"
+CONF_DISABLE_FAN_QUIET = "disable_fan_quiet"
 CONF_USE_EMA = "use_ema"
 CONF_DEVICE_ERROR_RATIO_SENSOR = "device_error_ratio_sensor"
 
@@ -44,6 +45,7 @@ olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).ext
     cv.Optional(CONF_TARGET_TEMPERATURE_STEP, default=0.5): cv.float_,
     cv.Optional(CONF_PRESETS_ENABLED, default=False): cv.boolean,
     cv.Optional(CONF_DISABLE_MODE_AUTO, default=False): cv.boolean,
+    cv.Optional(CONF_DISABLE_FAN_QUIET, default=False): cv.boolean,
     cv.Optional(CONF_DEVICE_ERROR_RATIO_SENSOR): sensor.sensor_schema(
         unit_of_measurement="%",
         entity_category="diagnostic",
@@ -96,6 +98,8 @@ async def to_code(config):
         cg.add(bridge.add_climate(climate_var))
         cg.add(climate_var.set_ambient_ema_alpha(climate_conf[CONF_EMA_ALPHA]))
         cg.add(climate_var.set_use_ema(config[CONF_USE_EMA]))
+        cg.add(climate_var.set_disable_mode_auto(climate_conf[CONF_DISABLE_MODE_AUTO]))
+        cg.add(climate_var.set_disable_fan_quiet(climate_conf[CONF_DISABLE_FAN_QUIET]))
 
         # Set temperature traits
         cg.add(climate_var.set_min_temperature(climate_conf[CONF_MIN_TEMPERATURE]))

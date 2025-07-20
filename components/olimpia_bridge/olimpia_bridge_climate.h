@@ -10,7 +10,7 @@ namespace esphome {
 namespace olimpia_bridge {
 
 // Timing constants (in milliseconds)
-static constexpr uint32_t VALVE_STATUS_CHECK_DELAY_MS = 300;
+static constexpr uint32_t VALVE_STATUS_CHECK_DELAY_MS = 100;
 static constexpr uint32_t RECOVERY_RETRY_INTERVAL_MS = 15000;
 static constexpr uint32_t PERIODIC_SYNC_INTERVAL_MS = 60000;
 static constexpr uint32_t PERIODIC_SYNC_JITTER_MS = 5000;
@@ -107,6 +107,7 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   void set_max_temperature(float max_temp) { this->max_temperature_ = max_temp; }
   void set_target_temperature_step(float step) { this->target_temperature_step_ = step; }
   void set_disable_mode_auto(bool disable) { this->disable_mode_auto_ = disable; }
+  void set_disable_fan_quiet(bool disable) { this->disable_fan_quiet_ = disable; }
   void set_presets_enabled(bool enabled) { this->presets_enabled_ = enabled; }
 
  protected:
@@ -160,8 +161,9 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   std::string custom_preset_{"Auto"};
   bool presets_enabled_ = true;
 
-  // Disable AUTO mode in HA
+  // Disable AUTO mode and QUIET fan in HA
   bool disable_mode_auto_ = false;
+  bool disable_fan_quiet_ = false;
 
   // External Temperature Management
   bool using_fallback_external_temp_{false};
