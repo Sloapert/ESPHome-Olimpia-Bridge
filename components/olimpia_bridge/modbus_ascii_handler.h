@@ -12,6 +12,13 @@ namespace olimpia_bridge {
 
 class OlimpiaBridge;  // Forward declaration
 
+// --- Constants ---
+static constexpr size_t MAX_QUEUE_SIZE = 30;
+static constexpr uint8_t DEFAULT_RETRIES = 2;
+static constexpr uint32_t FSM_TIMEOUT_MS = 500;
+static constexpr uint32_t FSM_WATCHDOG_TIMEOUT_MS = 10000;
+static constexpr uint32_t ACTIVITY_LED_ON_MS = 75;
+
 // --- FSM States ---
 enum class ModbusState {
   IDLE,
@@ -25,7 +32,7 @@ enum class ModbusState {
 struct ModbusRequest {
   uint8_t address;
   uint8_t function;
-  uint8_t retries_left = 2;
+  uint8_t retries_left;
   uint16_t start_register;
   uint16_t length_or_value;
   bool is_write;
@@ -56,6 +63,10 @@ class ModbusAsciiHandler : public esphome::Component {
   void set_de_pin(GPIOPin *pin) { 
     this->de_pin_ = pin;
     this->check_config_();
+  }
+
+  void set_activity_pin(GPIOPin *pin) {
+    this->activity_pin_ = pin;
   }
 
   bool is_ready() const {
@@ -101,7 +112,6 @@ class ModbusAsciiHandler : public esphome::Component {
   // FSM State
   ModbusState fsm_state_{ModbusState::IDLE};
   uint32_t fsm_start_time_{0};
-  static constexpr uint32_t fsm_timeout_ms_{500};
   std::queue<ModbusRequest> request_queue_;
   ModbusRequest current_request_;
   std::vector<uint8_t> rx_buffer_;
@@ -111,6 +121,8 @@ class ModbusAsciiHandler : public esphome::Component {
   GPIOPin *en_pin_{nullptr};
   GPIOPin *re_pin_{nullptr};
   GPIOPin *de_pin_{nullptr};
+  GPIOPin *activity_pin_{nullptr};
+  uint32_t activity_led_off_time_{0};
 
   // Error tracking
   uint32_t total_requests_{0};

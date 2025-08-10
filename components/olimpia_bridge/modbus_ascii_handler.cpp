@@ -46,6 +46,12 @@ void ModbusAsciiHandler::setup() {
     this->mark_failed();
     return;
   }
+
+  // Activity LED setup (inverted logic: HIGH = off, LOW = on)
+  if (this->activity_pin_ != nullptr) {
+    this->activity_pin_->setup();
+    this->activity_pin_->digital_write(true); // LED off by default
+  }
 }
 
 // --- Direction control ---
@@ -189,8 +195,6 @@ void ModbusAsciiHandler::write_register(uint8_t address, uint16_t reg, uint16_t 
 
 // --- Add request to queue ---
 void ModbusAsciiHandler::add_request(ModbusRequest request) {
-  constexpr size_t MAX_QUEUE_SIZE = 30;
-
   if (this->request_queue_.size() >= MAX_QUEUE_SIZE) {
     ESP_LOGW(TAG, "[FSM] Request queue full, rejecting new request (fn=0x%02X reg=0x%04X)",
              request.function, request.start_register);
@@ -199,7 +203,7 @@ void ModbusAsciiHandler::add_request(ModbusRequest request) {
     return;
   }
 
-  request.retries_left = 2;
+  request.retries_left = DEFAULT_RETRIES;
   this->request_queue_.push(std::move(request));
   ESP_LOGD(TAG, "[FSM] Request enqueued (fn=0x%02X reg=0x%04X)", request.function, request.start_register);
 }
@@ -211,10 +215,18 @@ void ModbusAsciiHandler::loop() {
   // Watchdog: detect stuck FSM (non-IDLE state for >10 seconds)
   if (this->fsm_state_ != ModbusState::IDLE) {
     uint32_t elapsed = millis() - last_state_change;
-    if (elapsed > 10000UL) {
+    if (elapsed > FSM_WATCHDOG_TIMEOUT_MS) {
       ESP_LOGW(TAG, "[FSM] Warning: FSM stuck in state %d for %u ms", this->fsm_state_, elapsed);
       this->fsm_state_ = ModbusState::ERROR;
       last_state_change = millis();  // Prevent repeated warnings
+    }
+  }
+
+  // Activity LED: turn off if time expired (inverted logic)
+  if (this->activity_pin_ != nullptr && this->activity_led_off_time_ > 0) {
+    if (static_cast<int32_t>(millis() - this->activity_led_off_time_) >= 0) {
+      this->activity_pin_->digital_write(true); // LED off
+      this->activity_led_off_time_ = 0;
     }
   }
 
@@ -266,6 +278,12 @@ void ModbusAsciiHandler::loop() {
       this->set_direction(false);  // back to RX mode
       this->rx_buffer_.clear();    // Discard any immediate echo from the transmitter
 
+      // Activity LED: turn on for activity
+      if (this->activity_pin_ != nullptr) {
+        this->activity_pin_->digital_write(false); // LED on (inverted)
+        this->activity_led_off_time_ = millis() + ACTIVITY_LED_ON_MS;
+      }
+
       this->fsm_start_time_ = millis();
       this->fsm_state_ = ModbusState::WAIT_RESPONSE;
       last_state_change = millis();
@@ -279,7 +297,7 @@ void ModbusAsciiHandler::loop() {
         ESP_LOGD(TAG, "[FSM] Response ready, processing");
         this->fsm_state_ = ModbusState::PROCESS_RESPONSE;
         last_state_change = millis();
-      } else if (millis() - this->fsm_start_time_ > fsm_timeout_ms_) {
+      } else if (millis() - this->fsm_start_time_ > FSM_TIMEOUT_MS) {
         ESP_LOGW(TAG, "[FSM] Timeout waiting for response");
         this->fsm_state_ = ModbusState::ERROR;
         last_state_change = millis();
@@ -308,6 +326,12 @@ void ModbusAsciiHandler::loop() {
       }
 
       std::vector<uint16_t> result;
+
+      // Activity LED: turn on for activity
+      if (this->activity_pin_ != nullptr) {
+        this->activity_pin_->digital_write(false); // LED on (inverted)
+        this->activity_led_off_time_ = millis() + ACTIVITY_LED_ON_MS;
+      }
 
       // Handle 0x03 / 0x04 (read) responses
       if (this->current_request_.function == 0x03 || this->current_request_.function == 0x04) {
