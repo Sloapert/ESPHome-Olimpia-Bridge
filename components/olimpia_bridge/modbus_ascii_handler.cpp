@@ -20,15 +20,29 @@ void ModbusAsciiHandler::setup() {
     return;
   }
 
-  // Initialize RE/DE direction control pins
-  if (this->re_pin_ != nullptr && this->de_pin_ != nullptr) {
+  // Check for conflicting or missing direction pin configuration
+  bool has_en = (this->en_pin_ != nullptr);
+  bool has_re = (this->re_pin_ != nullptr);
+  bool has_de = (this->de_pin_ != nullptr);
+
+  if (has_en && (has_re || has_de)) {
+    ESP_LOGE(TAG, "[Modbus] Invalid configuration: en_pin cannot be used with re_pin or de_pin");
+    this->mark_failed();
+    return;
+  }
+
+  if (has_en) {
+    this->en_pin_->setup();
+    this->en_pin_->digital_write(false); // RX mode by default (driver disabled)
+    ESP_LOGCONFIG(TAG, "[Modbus] RS-485 single EN direction pin initialized");
+  } else if (has_re && has_de) {
     this->re_pin_->setup();
     this->de_pin_->setup();
-    this->re_pin_->digital_write(false);  // RX mode
-    this->de_pin_->digital_write(false);  // RX mode
-    ESP_LOGCONFIG(TAG, "[Modbus] RS-485 direction control pins initialized");
+    this->re_pin_->digital_write(false);  // RX mode (disable driver)
+    this->de_pin_->digital_write(false);  // RX mode (disable driver)
+    ESP_LOGCONFIG(TAG, "[Modbus] RS-485 RE/DE direction control pins initialized");
   } else {
-    ESP_LOGE(TAG, "[Modbus] No RE/DE pair configured for RS-485 direction control");
+    ESP_LOGE(TAG, "[Modbus] No valid direction control pin(s) configured for RS-485");
     this->mark_failed();
     return;
   }
@@ -36,10 +50,20 @@ void ModbusAsciiHandler::setup() {
 
 // --- Direction control ---
 void ModbusAsciiHandler::set_direction(bool transmit) {
-  if (this->re_pin_ != nullptr)
-    this->re_pin_->digital_write(transmit);
-  if (this->de_pin_ != nullptr)
-    this->de_pin_->digital_write(transmit);
+  ESP_LOGD(TAG, "[Modbus] set_direction: %s", transmit ? "TX" : "RX");
+  if (this->en_pin_ != nullptr) {
+    this->en_pin_->digital_write(transmit);
+    ESP_LOGD(TAG, "[Modbus] en_pin write: %d", transmit);
+  } else {
+    if (this->re_pin_ != nullptr) {
+      this->re_pin_->digital_write(transmit);
+      ESP_LOGD(TAG, "[Modbus] re_pin write: %d", transmit);
+    }
+    if (this->de_pin_ != nullptr) {
+      this->de_pin_->digital_write(transmit);
+      ESP_LOGD(TAG, "[Modbus] de_pin write: %d", transmit);
+    }
+  }
 }
 
 // --- LRC checksum ---
@@ -235,11 +259,12 @@ void ModbusAsciiHandler::loop() {
       ESP_LOGD(TAG, "[FSM] TX ASCII Frame: %s\\r\\n", printable.c_str());
 
       this->set_direction(true);   // TX mode
-      delay(2);
+      delay(5);                    // give driver time to enable
       this->uart_->write_str(frame_ascii.c_str());
       this->uart_->flush();
-      delay(5);
+      delay(10);                   // allow full frame out before disabling driver
       this->set_direction(false);  // back to RX mode
+      this->rx_buffer_.clear();    // Discard any immediate echo from the transmitter
 
       this->fsm_start_time_ = millis();
       this->fsm_state_ = ModbusState::WAIT_RESPONSE;
@@ -266,6 +291,12 @@ void ModbusAsciiHandler::loop() {
     case ModbusState::PROCESS_RESPONSE: {
       std::string rx_string(this->rx_buffer_.begin(), this->rx_buffer_.end());
       this->rx_buffer_.clear();
+
+      // Strip CRLF for logging readability and avoid terminal control chars
+      std::string printable = rx_string;
+      if (printable.size() >= 2 && printable.substr(printable.size() - 2) == "\r\n")
+        printable.erase(printable.size() - 2);
+      ESP_LOGD(TAG, "[FSM] RX ASCII Frame: %s\\r\\n", printable.c_str());
 
       std::vector<uint8_t> response;
       bool ok = this->decode_ascii_frame(rx_string, response);

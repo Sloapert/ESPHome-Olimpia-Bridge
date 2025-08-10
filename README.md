@@ -156,8 +156,11 @@ uart:
 olimpia_bridge:
   id: modbus_ascii_bridge
   uart_id: modbus_uart
-  re_pin: GPIO35  # RE (Receive Enable)
-  de_pin: GPIO33  # DE (Driver Enable)
+  # 1. Single EN pin
+  en_pin: GPIO32  # EN (Direction control, HIGH=TX, LOW=RX)
+  # 2. Dual-pin
+  # re_pin: GPIO35  # RE (Receive Enable)
+  # de_pin: GPIO33  # DE (Driver Enable)
   error_ratio_sensor:
     name: Modbus Error Ratio
   use_ema: false  # Optional: enable/disable EMA filtering (default: true)
@@ -175,6 +178,10 @@ olimpia_bridge:
         device_id: olimpia_living
       presets_enabled: true  # Optional: exposes virtual presets to HA (default: false)
       disable_mode_auto: true  # Optional: hide AUTO mode from HA (default: false)
+      disable_fan_quiet: true  # Optional: hide QUIET fan mode from HA (default: false)
+      min_temperature: 16.0  # Optional (default: 15.0) - Register 202 value needs to be updated
+      max_temperature: 28.0  # Optional (default: 30.0) - Register 203 value needs to be updated
+      target_temperature_step: 0.1  # Optional (default: 0.5)
 
     - name: Bedroom Unit
       id: bedroom
@@ -189,6 +196,7 @@ olimpia_bridge:
         device_id: olimpia_bedroom
       presets_enabled: false
       disable_mode_auto: false
+      disable_fan_quiet: false
 
 sensor:
   - platform: homeassistant
@@ -232,6 +240,15 @@ Read a single register.
   data:
     address: 1
     register: 103
+```
+
+- **olimpia_bridge.dump_configuration**
+Dump all configuration registers for a device.
+
+```yaml
+- service: olimpia_bridge.dump_configuration
+  data:
+    address: 1
 ```
 
 For detailed information about available registers and their functions, please see [DEVELOPMENT.md](DEVELOPMENT.md#-core-operating-registers).

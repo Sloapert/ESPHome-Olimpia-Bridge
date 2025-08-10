@@ -42,6 +42,11 @@ class ModbusAsciiHandler : public esphome::Component {
     this->uart_ = uart;
     this->check_config_();
   }
+
+  void set_en_pin(GPIOPin *pin) {
+    this->en_pin_ = pin;
+    this->check_config_();
+  }
   
   void set_re_pin(GPIOPin *pin) { 
     this->re_pin_ = pin;
@@ -53,8 +58,15 @@ class ModbusAsciiHandler : public esphome::Component {
     this->check_config_();
   }
 
-  bool is_ready() const { 
-    return this->uart_ != nullptr && this->re_pin_ != nullptr && this->de_pin_ != nullptr; 
+  bool is_ready() const {
+    // Only one mode can be active
+    bool has_en = (this->en_pin_ != nullptr);
+    bool has_re = (this->re_pin_ != nullptr);
+    bool has_de = (this->de_pin_ != nullptr);
+    if (has_en && (has_re || has_de)) return false;
+    if (has_en) return this->uart_ != nullptr && this->en_pin_ != nullptr;
+    if (has_re && has_de) return this->uart_ != nullptr && this->re_pin_ != nullptr && this->de_pin_ != nullptr;
+    return false;
   }
 
   void set_direction(bool transmit);  // true = TX, false = RX
@@ -96,6 +108,7 @@ class ModbusAsciiHandler : public esphome::Component {
 
   // Hardware Interfaces
   uart::UARTComponent *uart_{nullptr};
+  GPIOPin *en_pin_{nullptr};
   GPIOPin *re_pin_{nullptr};
   GPIOPin *de_pin_{nullptr};
 

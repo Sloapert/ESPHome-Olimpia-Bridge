@@ -52,20 +52,39 @@ olimpia_bridge_climate_schema = climate.climate_schema(OlimpiaBridgeClimate).ext
     ),
 })
 
-# --- Top-level configuration schema ---
-CONFIG_SCHEMA = cv.Schema({
-    cv.GenerateID(): cv.declare_id(OlimpiaBridge),
-    cv.GenerateID(CONF_HANDLER_ID): cv.declare_id(ModbusAsciiHandler),
-    cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
-    cv.Required("re_pin"): pins.gpio_output_pin_schema,
-    cv.Required("de_pin"): pins.gpio_output_pin_schema,
-    cv.Required("error_ratio_sensor"): sensor.sensor_schema(
-        unit_of_measurement="%",
-        entity_category="diagnostic",
-    ),
-    cv.Required(CONF_CLIMATES): cv.ensure_list(olimpia_bridge_climate_schema),
-    cv.Optional(CONF_USE_EMA, default=True): cv.boolean,
-}).extend(cv.COMPONENT_SCHEMA)
+
+# --- Custom direction pin validator ---
+def validate_direction_pins(config):
+    en = "en_pin" in config
+    re = "re_pin" in config
+    de = "de_pin" in config
+    if en:
+        if re or de:
+            raise cv.Invalid("Cannot specify en_pin together with re_pin or de_pin.")
+    else:
+        if re != de:
+            raise cv.Invalid("You must specify both re_pin and de_pin together, or only en_pin.")
+        if not (re and de):
+            raise cv.Invalid("You must specify either en_pin or both re_pin and de_pin.")
+    return config
+
+CONFIG_SCHEMA = cv.All(
+    cv.Schema({
+        cv.GenerateID(): cv.declare_id(OlimpiaBridge),
+        cv.GenerateID(CONF_HANDLER_ID): cv.declare_id(ModbusAsciiHandler),
+        cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
+        cv.Optional("en_pin"): pins.gpio_output_pin_schema,
+        cv.Optional("re_pin"): pins.gpio_output_pin_schema,
+        cv.Optional("de_pin"): pins.gpio_output_pin_schema,
+        cv.Required("error_ratio_sensor"): sensor.sensor_schema(
+            unit_of_measurement="%",
+            entity_category="diagnostic",
+        ),
+        cv.Required(CONF_CLIMATES): cv.ensure_list(olimpia_bridge_climate_schema),
+        cv.Optional(CONF_USE_EMA, default=True): cv.boolean,
+    }).extend(cv.COMPONENT_SCHEMA),
+    validate_direction_pins
+)
 
 # --- Code generation logic ---
 async def to_code(config):
@@ -73,14 +92,27 @@ async def to_code(config):
     handler = cg.new_Pvariable(config[CONF_HANDLER_ID])
     await cg.register_component(handler, config)
 
+
     # Configure hardware on handler
     uart_var = await cg.get_variable(config[CONF_UART_ID])
-    re_pin = await cg.gpio_pin_expression(config["re_pin"])
-    de_pin = await cg.gpio_pin_expression(config["de_pin"])
-
     cg.add(handler.set_uart(uart_var))
-    cg.add(handler.set_re_pin(re_pin))
-    cg.add(handler.set_de_pin(de_pin))
+
+    en_pin = config.get("en_pin")
+    re_pin = config.get("re_pin")
+    de_pin = config.get("de_pin")
+
+    if en_pin is not None:
+        if re_pin is not None or de_pin is not None:
+            raise cv.Invalid("Cannot specify en_pin together with re_pin or de_pin.")
+        en_pin_expr = await cg.gpio_pin_expression(en_pin)
+        cg.add(handler.set_en_pin(en_pin_expr))
+    elif re_pin is not None and de_pin is not None:
+        re_pin_expr = await cg.gpio_pin_expression(re_pin)
+        de_pin_expr = await cg.gpio_pin_expression(de_pin)
+        cg.add(handler.set_re_pin(re_pin_expr))
+        cg.add(handler.set_de_pin(de_pin_expr))
+    else:
+        raise cv.Invalid("You must specify either en_pin or both re_pin and de_pin.")
 
     # Create bridge with pre-configured handler
     bridge = cg.new_Pvariable(config[CONF_ID])
