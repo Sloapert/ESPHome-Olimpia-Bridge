@@ -270,13 +270,11 @@ void ModbusAsciiHandler::loop() {
 
       ESP_LOGD(TAG, "[FSM] TX ASCII Frame: %s\\r\\n", printable.c_str());
 
-      this->set_direction(true);   // TX mode
-      delay(5);                    // give driver time to enable
+      this->set_direction(true);
       this->uart_->write_str(frame_ascii.c_str());
       this->uart_->flush();
-      delay(10);                   // allow full frame out before disabling driver
-      this->set_direction(false);  // back to RX mode
-      this->rx_buffer_.clear();    // Discard any immediate echo from the transmitter
+      this->set_direction(false);
+      this->rx_buffer_.clear();
 
       // Activity LED: turn on for activity
       if (this->activity_pin_ != nullptr) {

@@ -180,6 +180,8 @@ class OlimpiaBridgeClimate : public climate::Climate, public Component {
   // Per-device Modbus request tracking
   uint32_t device_total_requests_{0};
   uint32_t device_failed_requests_{0};
+  int last_published_device_error_ratio_{-1};
+  void publish_device_error_ratio_if_enabled();
 
   // Temperature limits and steps
   float min_temperature_{15.0f};
