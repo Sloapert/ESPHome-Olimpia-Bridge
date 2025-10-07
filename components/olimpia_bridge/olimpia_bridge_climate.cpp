@@ -24,6 +24,7 @@ static constexpr ModeInfo MODE_INFO[] = {
     {Mode::AUTO, "AUTO", climate::CLIMATE_MODE_AUTO},
     {Mode::HEATING, "HEAT", climate::CLIMATE_MODE_HEAT},
     {Mode::COOLING, "COOL", climate::CLIMATE_MODE_COOL},
+    {Mode::FAN_ONLY, "FAN", climate::CLIMATE_MODE_FAN_ONLY},
 };
 
 static constexpr FanSpeedInfo FAN_SPEED_INFO[] = {
@@ -124,6 +125,9 @@ uint16_t OlimpiaBridgeClimate::build_command_register(bool on, Mode mode, FanSpe
     case Mode::COOLING:
       reg |= (0b10 << 13);
       break;
+    case Mode::FAN_ONLY:
+      reg |= (0b11 << 13);
+      break;
     default:
       reg |= (0b00 << 13);  // Fallback to AUTO
       break;
@@ -174,7 +178,8 @@ climate::ClimateTraits OlimpiaBridgeClimate::traits() {
   std::set<climate::ClimateMode> supported_modes = {
     climate::CLIMATE_MODE_OFF,
     climate::CLIMATE_MODE_COOL,
-    climate::CLIMATE_MODE_HEAT
+    climate::CLIMATE_MODE_HEAT,
+    climate::CLIMATE_MODE_FAN_ONLY
   };
   if (!this->disable_mode_auto_) {
     supported_modes.insert(climate::CLIMATE_MODE_AUTO);
@@ -240,6 +245,10 @@ void OlimpiaBridgeClimate::control(const climate::ClimateCall &call) {
       case climate::CLIMATE_MODE_HEAT:
         this->on_ = true;
         this->mode_ = Mode::HEATING;
+        break;
+      case climate::CLIMATE_MODE_FAN_ONLY:
+        this->on_ = true;
+        this->mode_ = Mode::FAN_ONLY;
         break;
       case climate::CLIMATE_MODE_AUTO:
         this->on_ = true;
@@ -622,6 +631,8 @@ void OlimpiaBridgeClimate::update_climate_action_from_valve_status() {
           new_action = climate::CLIMATE_ACTION_COOLING;
         } else if (this->mode_ == Mode::HEATING) {
           new_action = climate::CLIMATE_ACTION_HEATING;
+        } else if (this->mode_ == Mode::FAN_ONLY) {
+          new_action = climate::CLIMATE_ACTION_FAN;
         } else if (this->mode_ == Mode::AUTO) {
           // AUTO requires additional inference
           if (boiler && !chiller)
