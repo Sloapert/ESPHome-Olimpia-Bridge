@@ -10,7 +10,7 @@ Turn your Olimpia Splendid HVAC into a smart climate system with ESPHome and Hom
 
 ## 🚀 Features
 
-- **Modbus ASCII communication** with Olimpia Splendid devices allowing full **climate control** 
+- **Modbus ASCII communication** with Olimpia Splendid devices allowing full **climate control** (heat, cool, fan-only, auto)
 - Communication behavior and timing comply with official Olimpia Splendid specifications & recommendations
 - **Smart temperature handling**:
   - **External temperature injection** from Home Assistant with RAM/EEPROM fallback
