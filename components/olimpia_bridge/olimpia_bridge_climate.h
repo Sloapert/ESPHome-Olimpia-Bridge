@@ -23,6 +23,7 @@ enum class Mode : uint8_t {
   AUTO     = 0b00,
   HEATING  = 0b01,
   COOLING  = 0b10,
+  FAN_ONLY = 0b11,
 };
 
 // --- Fan speed levels (PRG bits 0–2) ---
@@ -72,6 +73,7 @@ inline ParsedState parse_command_register(uint16_t reg) {
     case 0b00: st.mode = Mode::AUTO; break;
     case 0b01: st.mode = Mode::HEATING; break;
     case 0b10: st.mode = Mode::COOLING; break;
+    case 0b11: st.mode = Mode::FAN_ONLY; break;
     default:   st.mode = Mode::AUTO; break;
   }
 
